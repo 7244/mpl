@@ -6,8 +6,11 @@ struct WordType{
 };
 
 /* tab or space */
+bool ischar_ts(uint8_t c){
+  return c == ' ' || c == '\t';
+}
 bool ischar_ts(){
-  return gc() == ' ' || gc() == '\t';
+  return ischar_ts(gc());
 }
 
 void SkipEmptyInLine(){
@@ -18,6 +21,31 @@ void SkipEmptyInLine(){
 
     ic();
   }
+}
+
+/* beauty string is just string that doesnt have spaces in begin and end */
+/* can be used as side effect without using return value */
+std::string ReadLineAsBeautyString(){
+  std::string r;
+
+  SkipEmptyInLine();
+
+  while(gc() != '\n'){
+    r += gc();
+    ic();
+  }
+
+  ic();
+
+  auto l = r.size();
+  while(l--){
+    if(!ischar_ts(r[l])){
+      break;
+    }
+    r.pop_back();
+  }
+
+  return r;
 }
 
 WordType::t IdentifyWordAndSkip(){
@@ -153,6 +181,128 @@ void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
   }
 }
 
+void SkipCurrentEmptyLine(){
+  while(1){
+    if(ischar_ts()){
+      
+    }
+    else if(gc() == '\n'){
+      ic();
+      break;
+    }
+    else{
+      printwi("this line supposed to be empty after something");
+      __abort();
+    }
+    ic();
+  }
+}
+
+void SkipCurrentLine(){
+  while(1){
+    ic();
+    if(gc() == '\n'){
+      ic();
+      break;
+    }
+  }
+}
+
+uint8_t SkipToNextPreprocessorScopeExit(){
+  std::vector<uint8_t> Scopes;
+
+  while(1){
+    SkipEmptyInLine();
+    if(gc() == '#'){
+      ic();
+      SkipEmptyInLine();
+
+      auto Identifier = GetIdentifier();
+
+      if(
+        !Identifier.compare("ifdef") ||
+        !Identifier.compare("ifndef") ||
+        !Identifier.compare("if")
+      ){
+        Scopes.push_back(0);
+      }
+      else do{
+        uint8_t t =
+          1 * !Identifier.compare("elif") |
+          2 * !Identifier.compare("else") |
+          3 * !Identifier.compare("endif")
+        ;
+        if(t == 0){
+          break;
+        }
+        if(!Scopes.size()){
+          return t;
+        }
+        auto &s = Scopes[Scopes.size() - 1];
+        if(t == 3){
+          Scopes.pop_back();
+          break;
+        }
+        if(s == 2 && t <= s){
+          printwi("double #else or #elif after #else");
+          __abort();
+        }
+        s = t;
+      }while(0);
+
+      SkipCurrentLine();
+    }
+    else if(gc() == '\n'){
+      ic();
+    }
+    else{
+      SkipCurrentLine();
+    }
+  }
+}
+
+bool GetConditionFromPreprocessor(){
+  __abort();
+  return true;
+}
+
+void PreprocessorIf(
+  uint8_t Type, /* check PreprocessorScope_t */
+  bool Condition
+){
+  gt_begin:;
+
+  if(Type == 0){
+    PreprocessorScope.push_back({.Condition = Condition});
+  }
+  else{
+    if(!PreprocessorScope.size()){
+      printwi("preprocessor scope if type requires past if.");
+      __abort();
+    }
+    auto &ps = PreprocessorScope[PreprocessorScope.size() - 1];
+    if(ps.Type == 2 && Type <= ps.Type){
+      printwi("double #else or #elif after #else");
+      __abort();
+    }
+    ps.Type = Type;
+  }
+
+  if(!Condition){
+    Type = SkipToNextPreprocessorScopeExit();
+    if(Type == 3){
+      return;
+    }
+    else if(Type == 2){
+      Condition = true;
+    }
+    else{ /* 1 */
+      Condition = GetConditionFromPreprocessor();
+    }
+    goto gt_begin;
+  }
+}
+
 bool Compile(){
   while(1){
 
@@ -167,6 +317,11 @@ bool Compile(){
       auto Identifier = GetIdentifier();
       if(!Identifier.compare("eof")){
         __abort();
+      }
+      else if(!Identifier.compare("error")){
+        auto errstr = ReadLineAsBeautyString();
+        printwi("#error %s", errstr.c_str());
+        PR_exit(1);
       }
       else if(!Identifier.compare("include")){
         SkipEmptyInLine();
@@ -210,16 +365,19 @@ bool Compile(){
           Define.isfunc = false;
           ic();
         }
-        else{
+        else if(gc() != '\n'){
           __abort();
         }
 
-        while(gc() != '\n'){
-          Define.Output += gc();
-          ic();
-        }
+        Define.Output = ReadLineAsBeautyString();
 
         DefineMap[defiden] = Define;
+      }
+      else if(!Identifier.compare("ifdef")){
+        SkipEmptyInLine();
+        auto defiden = GetIdentifier();
+        SkipCurrentEmptyLine();
+        PreprocessorIf(0, DefineMap.find(defiden) != DefineMap.end());
       }
       else{
         print("what is this? %s\n", Identifier.c_str());

@@ -48,11 +48,19 @@ struct pile_t{
   };
   std::map<std::string, Define_t> DefineMap;
 
+  struct PreprocessorScope_t{
+    /* 0 #if, 1 #elif, 2 #else */
+    uint8_t Type = 0;
+
+    bool Condition;
+  };
+  std::vector<PreprocessorScope_t> PreprocessorScope;
+
   struct expandtrace_t{
     bool Relative;
 
     uintptr_t PathSize;
-    std::string_view FileName;
+    std::string FileName;
 
     uintptr_t FileDataVectorID;
 
@@ -68,10 +76,9 @@ struct pile_t{
   /* print with info */
   #define printwi(format, ...) \
     print( \
-      format " %.*s:%lu\n", \
+      format " %s:%lu\n", \
       ##__VA_ARGS__, \
-      (uintptr_t)expandtrace[expandtrace.size() - 1].FileName.size(), \
-      &expandtrace[expandtrace.size() - 1].FileName[0], \
+      expandtrace[expandtrace.size() - 1].FileName.c_str(), \
       (uint32_t)expandtrace[expandtrace.size() - 1].LineIndex \
     );
 
@@ -225,12 +232,12 @@ struct pile_t{
       return;
     }
     else if(gc() != '\r'){
-      __abort(); /* TOOD add printwi */
+      return;
     }
 
     _ic();
     if(gc() != '\n'){
-      __abort(); /* TOOD add printwi */
+      return;
     }
 
     _ic();
