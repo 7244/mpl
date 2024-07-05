@@ -4,6 +4,7 @@
 #include <WITCH/FS/FS.h>
 #include <WITCH/STR/common/common.h>
 #include <WITCH/PR/PR.h>
+#include <WITCH/A/A.h>
 
 /* realpath */
 #include <stdlib.h>
@@ -23,6 +24,25 @@ void print(const char *format, ...){
 }
 
 struct pile_t{
+  struct StringSize_t{
+    uint32_t s; /* TOOD hardcoded type */
+    uint8_t *p;
+
+    ~StringSize_t(){
+      if(s){
+        A_resize(p, 0);
+      }
+    }
+  };
+
+  void AddVoidToString(std::string &str, uintptr_t s, const void *v){
+    auto p = (const uint8_t *)v;
+    auto stop = &p[s];
+    while(p != stop){
+      str += *p++;
+    }
+  }
+
   struct{
     bool Wmacro_redefined = true;
   }settings;
@@ -56,11 +76,12 @@ struct pile_t{
   };
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
-  struct expandtrace_t{
+  struct expandtrace_data_t{
     bool Relative;
 
     uintptr_t PathSize;
-    std::string FileName;
+
+    StringSize_t FileName;
 
     uintptr_t FileDataVectorID;
 
@@ -72,19 +93,31 @@ struct pile_t{
     uintptr_t i = 0;
     uintptr_t LineIndex = 0;
   };
-  std::vector<expandtrace_t> expandtrace;
+  expandtrace_data_t *CurrentExpand;
+  #define BLL_set_prefix ExpandTrace
+  #define BLL_set_Link 0
+  #define BLL_set_Recycle 0
+  #define BLL_set_IntegerNR 1
+  #define BLL_set_CPP_ConstructDestruct 1
+  #define BLL_set_CPP_Node_ConstructDestruct 1
+  #define BLL_set_AreWeInsideStruct 1
+  #define BLL_set_NodeDataType expandtrace_data_t
+  #define BLL_set_type_node uint16_t /* TOOD hardcoded type */
+  #include <BLL/BLL.h>
+  ExpandTrace_t ExpandTrace;
 
   bool &GetPragmaOnce(){
-    return FileDataVector[expandtrace[expandtrace.size() - 1].FileDataVectorID].pragma_once;
+    return FileDataVector[CurrentExpand->FileDataVectorID].pragma_once;
   }
 
   /* print with info */
   #define printwi(format, ...) \
     print( \
-      format " %s:%lu\n", \
+      format " %.*s:%lu\n", \
       ##__VA_ARGS__, \
-      expandtrace[expandtrace.size() - 1].FileName.c_str(), \
-      (uint32_t)expandtrace[expandtrace.size() - 1].LineIndex \
+      (uintptr_t)CurrentExpand->FileName.s, \
+      CurrentExpand->FileName.p, \
+      (uint32_t)CurrentExpand->LineIndex \
     );
 
   std::string realpath(std::string p){
@@ -102,19 +135,23 @@ struct pile_t{
   void ExpandTraceAdd(
     bool Relative,
     uintptr_t PathSize,
-    const std::string &FileName,
+    uintptr_t FileNameSize,
+    uint8_t *FileName,
     uintptr_t FileDataVectorID
   ){
-    auto &fd = FileDataVector[FileDataVectorID];
+    ExpandTrace.inc();
 
-    expandtrace.push_back({
-      .Relative = Relative,
-      .PathSize = 0,
-      .FileName = FileName,
-      .FileDataVectorID = FileDataVectorID,
-      .s = fd.s,
-      .p = fd.p
-    });
+    CurrentExpand = &ExpandTrace[ExpandTrace.Usage() - 1];
+
+    CurrentExpand->Relative = Relative;
+    CurrentExpand->PathSize = PathSize;
+    CurrentExpand->FileName.s = FileNameSize;
+    CurrentExpand->FileName.p = FileName;
+    CurrentExpand->FileDataVectorID = FileDataVectorID;
+
+    auto &fd = FileDataVector[FileDataVectorID];
+    CurrentExpand->s = fd.s;
+    CurrentExpand->p = fd.p;
   }
 
   void ExpandFile(bool Relative, std::string PathName){
@@ -133,7 +170,8 @@ struct pile_t{
       RelativePaths[RelativePaths.size() - 1].append(DefaultInclude[i]);
     }
 
-    std::string FileName;
+    uintptr_t FileNameSize;
+    uint8_t *FileName;
 
     {
       sintptr_t i = PathName.size();
@@ -145,13 +183,16 @@ struct pile_t{
 
       /* TODO check if slash has something before itself */
 
-      FileName = PathName.substr(i + 1, PathName.size() - i - 1);
+      FileNameSize = PathName.size() - i - 1;
+      FileName = (uint8_t *)A_resize(NULL, FileNameSize);
+      __MemoryCopy(&PathName[i + 1], FileName, FileNameSize);
       if(i > 0){
         RelativePaths[RelativePaths.size() - 1].append(PathName, 0, i + 1);
       }
     }
 
-    std::string abspath = RelativePaths[RelativePaths.size() - 1] + FileName;
+    std::string abspath = RelativePaths[RelativePaths.size() - 1];
+    AddVoidToString(abspath, FileNameSize, FileName);
 
     uintptr_t FileDataVectorID;
 
@@ -201,32 +242,30 @@ struct pile_t{
       #endif
     }
 
-    ExpandTraceAdd(Relative, 0, FileName, FileDataVectorID);
+    ExpandTraceAdd(Relative, 0, FileNameSize, FileName, FileDataVectorID);
   }
   void DeexpandFile(){
-    auto &et = expandtrace[expandtrace.size() - 1];
-
-    if(et.Relative){
+    if(CurrentExpand->Relative){
       auto &rp = RelativePaths[RelativePaths.size() - 1];
-      rp = rp.substr(0, rp.size() - et.PathSize);
+      rp = rp.substr(0, rp.size() - CurrentExpand->PathSize);
     }
-    else if(et.Relative){
+    else if(CurrentExpand->Relative){
       RelativePaths.pop_back();
     }
 
-    expandtrace.pop_back();
+    ExpandTrace.dec();
+    CurrentExpand--;
   }
 
   /* get char */
   auto gc(){
-    auto &et = expandtrace[expandtrace.size() - 1];
-    return et.p[et.i];
+    return CurrentExpand->p[CurrentExpand->i];
   }
   /* iterate char */
   void _ic(){
-    expandtrace[expandtrace.size() - 1].i++;
+    CurrentExpand->i++;
 
-    while(expandtrace[expandtrace.size() - 1].i == expandtrace[expandtrace.size() - 1].s){
+    while(CurrentExpand->i == CurrentExpand->s){
       DeexpandFile();
     }
   }
@@ -348,7 +387,7 @@ int main(int argc, const char **argv){
     .s = 5,
     .p = (uint8_t *)"\n#eof"
   });
-  pile.ExpandTraceAdd(true, 0, "", 0);
+  pile.ExpandTraceAdd(true, 0, 0, NULL, 0);
 
   pile.RelativePaths.push_back({});
 
