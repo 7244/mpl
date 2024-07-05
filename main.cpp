@@ -64,6 +64,11 @@ struct pile_t{
 
     uintptr_t FileDataVectorID;
 
+    /* they are same as FileDataVector[FileDataVectorID] */
+    /* they are here for performance reasons */
+    uintptr_t s;
+    uint8_t *p;
+
     uintptr_t i = 0;
     uintptr_t LineIndex = 0;
   };
@@ -93,6 +98,24 @@ struct pile_t{
     "/usr/include/",
     "/usr/local/include/"
   };
+
+  void ExpandTraceAdd(
+    bool Relative,
+    uintptr_t PathSize,
+    const std::string &FileName,
+    uintptr_t FileDataVectorID
+  ){
+    auto &fd = FileDataVector[FileDataVectorID];
+
+    expandtrace.push_back({
+      .Relative = Relative,
+      .PathSize = 0,
+      .FileName = FileName,
+      .FileDataVectorID = FileDataVectorID,
+      .s = fd.s,
+      .p = fd.p
+    });
+  }
 
   void ExpandFile(bool Relative, std::string PathName){
     if(!Relative){
@@ -178,12 +201,7 @@ struct pile_t{
       #endif
     }
 
-    expandtrace.push_back({
-      .Relative = Relative,
-      .PathSize = 0,
-      .FileName = FileName,
-      .FileDataVectorID = FileDataVectorID
-    });
+    ExpandTraceAdd(Relative, 0, FileName, FileDataVectorID);
   }
   void DeexpandFile(){
     auto &et = expandtrace[expandtrace.size() - 1];
@@ -202,47 +220,28 @@ struct pile_t{
   /* get char */
   auto gc(){
     auto &et = expandtrace[expandtrace.size() - 1];
-    auto fdvid = et.FileDataVectorID;
-    return FileDataVector[fdvid].p[et.i];
+    return et.p[et.i];
   }
   /* iterate char */
   void _ic(){
-    auto &et = expandtrace[expandtrace.size() - 1];
-    et.i++;
+    expandtrace[expandtrace.size() - 1].i++;
 
-    auto fdvid = et.FileDataVectorID;
-
-    while(expandtrace[expandtrace.size() - 1].i == FileDataVector[fdvid].s){
+    while(expandtrace[expandtrace.size() - 1].i == expandtrace[expandtrace.size() - 1].s){
       DeexpandFile();
     }
   }
   /* ignore basic stuff */
-  auto ibs(){
-    if(gc() != '\\'){
-      return;
-    }
-    else if(gc() == '\r'){
+  void ibs(){
+    uint8_t c;
+    while((c = gc()) == '\r' || c == '\\'){
       _ic();
+      if(c == '\\'){
+        if(gc() != '\n'){
+          return;
+        }
+        _ic();
+      }
     }
-
-    _ic();
-    if(gc() == '\n'){
-      _ic();
-      ibs();
-      return;
-    }
-    else if(gc() != '\r'){
-      return;
-    }
-
-    _ic();
-    if(gc() != '\n'){
-      return;
-    }
-
-    _ic();
-
-    ibs();
   }
   void ic(){
     _ic();
@@ -349,12 +348,7 @@ int main(int argc, const char **argv){
     .s = 5,
     .p = (uint8_t *)"\n#eof"
   });
-  pile.expandtrace.push_back({
-    .Relative = true,
-    .PathSize = 0,
-    .FileName = "",
-    .FileDataVectorID = 0
-  });
+  pile.ExpandTraceAdd(true, 0, "", 0);
 
   pile.RelativePaths.push_back({});
 
