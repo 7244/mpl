@@ -170,7 +170,7 @@ struct pile_t{
     );
   }
 
-  void ExpandFile(bool Relative, std::string PathName){
+  void ExpandFile(bool Relative, const std::string &PathName){
     if(!Relative){
       RelativePaths.push_back({});
       uintptr_t i = 0;
