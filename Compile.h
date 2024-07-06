@@ -73,7 +73,7 @@ std::string GetIdentifier(){
 
   r.push_back(gc());
 
-  ic();
+  ic_unsafe();
   while(1){
     if(!STR_ischar_digit(gc()) && !STR_ischar_char(gc()) && gc() != '_'){
       break;
@@ -81,7 +81,7 @@ std::string GetIdentifier(){
 
     r.push_back(gc());
 
-    ic();
+    ic_unsafe();
   }
 
   return r;

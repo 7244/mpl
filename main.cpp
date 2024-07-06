@@ -234,8 +234,8 @@ struct pile_t{
       auto file_input_size = IO_stat_GetSizeInBytes(&st);
 
       FileDataVector.push_back({
-        .s = (uintptr_t)file_input_size,
-        .p = (uint8_t *)malloc(file_input_size)
+        .s = (uintptr_t)file_input_size + 1,
+        .p = (uint8_t *)malloc(file_input_size + 1)
       });
       FileDataVectorID = FileDataVector.size() - 1;
 
@@ -246,6 +246,8 @@ struct pile_t{
       ) != file_input_size){
         __abort();
       }
+
+      FileDataVector[FileDataVectorID].p[file_input_size] = '\n';
 
       FS_file_close(&file_input);
 
@@ -278,7 +280,18 @@ struct pile_t{
   const uint8_t &gc(){
     return *CurrentExpand.i;
   }
-  /* iterate char */
+
+  void ic_unsafe(){
+    CurrentExpand.i++;
+
+    while(EXPECT(gc() == '\\', false)){
+      CurrentExpand.i++;
+      if(gc() != '\n'){
+        return;
+      }
+      CurrentExpand.i++;
+    }
+  }
   void _ic(){
     CurrentExpand.i++;
 
