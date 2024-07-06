@@ -282,11 +282,8 @@ struct pile_t{
   }
 
   void ic_unsafe(){
-    CurrentExpand.i++;
-
-    while(EXPECT(gc() == '\\', false)){
-      CurrentExpand.i++;
-      if(gc() != '\n'){
+    while(EXPECT(*++CurrentExpand.i == '\\', false)){
+      if(*++CurrentExpand.i != '\n'){
         return;
       }
       CurrentExpand.i++;

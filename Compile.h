@@ -19,7 +19,7 @@ void SkipEmptyInLine(){
       break;
     }
 
-    ic();
+    ic_unsafe();
   }
 }
 
@@ -200,7 +200,7 @@ void SkipCurrentEmptyLine(){
 
 void SkipCurrentLine(){
   while(1){
-    ic();
+    ic_unsafe();
     if(gc() == '\n'){
       ic();
       break;
@@ -214,36 +214,37 @@ uint8_t SkipToNextPreprocessorScopeExit(){
   while(1){
     SkipEmptyInLine();
     if(gc() == '#'){
-      ic();
+      ic_unsafe();
       SkipEmptyInLine();
 
       auto Identifier = GetIdentifier();
 
-      if(
-        !Identifier.compare("ifdef") ||
-        !Identifier.compare("ifndef") ||
-        !Identifier.compare("if")
-      ){
-        Scopes.push_back(0);
-      }
-      else do{
+      do{
         uint8_t t =
-          1 * !Identifier.compare("elif") |
-          2 * !Identifier.compare("else") |
-          3 * !Identifier.compare("endif")
+          1 * !Identifier.compare("ifdef") |
+          1 * !Identifier.compare("ifndef") |
+          1 * !Identifier.compare("if") |
+          2 * !Identifier.compare("elif") |
+          3 * !Identifier.compare("else") |
+          4 * !Identifier.compare("endif")
         ;
         if(t == 0){
           break;
         }
+        if(t == 1){
+          Scopes.push_back(0);
+          break;
+        }
+        --t;
         if(!Scopes.size()){
           return t;
         }
-        auto &s = Scopes[Scopes.size() - 1];
+        auto &s = Scopes.back();
         if(t == 3){
           Scopes.pop_back();
           break;
         }
-        if(s == 2 && t <= s){
+        if(EXPECT(s == 2 && t <= s, false)){
           printwi("double #else or #elif after #else");
           __abort();
         }
