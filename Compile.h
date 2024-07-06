@@ -316,7 +316,7 @@ bool Compile(){
     if(wt == WordType::PreprocessorStart){
       auto Identifier = GetIdentifier();
       if(!Identifier.compare("eof")){
-        __abort();
+        return 0;
       }
       else if(!Identifier.compare("error")){
         auto errstr = ReadLineAsBeautyString();

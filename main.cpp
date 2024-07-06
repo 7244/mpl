@@ -87,11 +87,10 @@ struct pile_t{
 
     /* they are same as FileDataVector[FileDataVectorID] */
     /* they are here for performance reasons */
-    uintptr_t s;
-    uint8_t *p;
+    const uint8_t *s;
+    const uint8_t *i;
 
-    uintptr_t i = 0;
-    uintptr_t LineIndex = 0;
+    uintptr_t LineIndex;
   };
   expandtrace_data_t CurrentExpand;
   #define BLL_set_prefix ExpandTrace
@@ -146,8 +145,10 @@ struct pile_t{
     CurrentExpand.FileDataVectorID = FileDataVectorID;
 
     auto &fd = FileDataVector[FileDataVectorID];
-    CurrentExpand.s = fd.s;
-    CurrentExpand.p = fd.p;
+    CurrentExpand.s = &fd.p[fd.s];
+    CurrentExpand.i = fd.p;
+
+    CurrentExpand.LineIndex = 0;
   }
 
   void ExpandTraceAdd(
@@ -274,8 +275,8 @@ struct pile_t{
   }
 
   /* get char */
-  auto gc(){
-    return CurrentExpand.p[CurrentExpand.i];
+  const uint8_t &gc(){
+    return *CurrentExpand.i;
   }
   /* iterate char */
   void _ic(){
@@ -400,8 +401,8 @@ int main(int argc, const char **argv){
   }
 
   pile.FileDataVector.push_back({
-    .s = 5,
-    .p = (uint8_t *)"\n#eof"
+    .s = 6,
+    .p = (uint8_t *)"\n#eof\n"
   });
   pile._ExpandTraceSet(true, 0, 0, NULL, 0);
   pile.ExpandTrace.inc();
