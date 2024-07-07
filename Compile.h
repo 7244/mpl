@@ -63,28 +63,26 @@ WordType::t IdentifyWordAndSkip(){
   __unreachable();
 }
 
-std::string GetIdentifier(){
-  std::string r;
+uintptr_t _GetIdentifier(){
+  uintptr_t r = 1;
 
-  if(!STR_ischar_char(gc()) && gc() != '_'){
+  if(EXPECT(!STR_ischar_char(gc()) && gc() != '_', false)){
     printwi("Identifier starts with not character.");
     __abort();
   }
 
-  r.push_back(gc());
-
   ic_unsafe();
-  while(1){
-    if(!STR_ischar_digit(gc()) && !STR_ischar_char(gc()) && gc() != '_'){
-      break;
-    }
-
-    r.push_back(gc());
-
+  while(STR_ischar_char(gc()) || STR_ischar_digit(gc()) || gc() == '_'){
     ic_unsafe();
+    r++;
   }
 
   return r;
+}
+
+std::string_view GetIdentifier(){
+  auto p = &gc();
+  return std::string_view((const char *)p, _GetIdentifier());
 }
 
 /* include strings cant have escape or anything fancy */
@@ -381,7 +379,7 @@ bool Compile(){
         PreprocessorIf(0, DefineMap.find(defiden) != DefineMap.end());
       }
       else{
-        print("what is this? %s\n", Identifier.c_str());
+        print("what is this? %.*s\n", (uintptr_t)Identifier.size(), Identifier.data());
         __abort();
       }
     }

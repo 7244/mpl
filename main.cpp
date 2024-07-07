@@ -66,7 +66,7 @@ struct pile_t{
     bool va_args;
     std::string Output;
   };
-  std::map<std::string, Define_t> DefineMap;
+  std::map<std::string_view, Define_t> DefineMap;
 
   struct PreprocessorScope_t{
     /* 0 #if, 1 #elif, 2 #else */
@@ -233,23 +233,58 @@ struct pile_t{
 
       auto file_input_size = IO_stat_GetSizeInBytes(&st);
 
-      FileDataVector.push_back({
-        .s = (uintptr_t)file_input_size + 1,
-        .p = (uint8_t *)malloc(file_input_size + 1)
-      });
-      FileDataVectorID = FileDataVector.size() - 1;
+      auto p = (uint8_t *)malloc(file_input_size + 1); /* + 1 for endline in end*/
+      uintptr_t p_size = 0;
+      {
+        auto tp = (uint8_t *)malloc(file_input_size);
 
-      if(FS_file_read(
-        &file_input,
-        FileDataVector[FileDataVectorID].p,
-        file_input_size
-      ) != file_input_size){
-        __abort();
+        if(FS_file_read(
+          &file_input,
+          tp,
+          file_input_size
+        ) != file_input_size){
+          __abort();
+        }
+
+        FS_file_close(&file_input);
+
+        if(file_input_size){
+          uintptr_t tp_size = file_input_size - 1;
+          for(uintptr_t i = 0; EXPECT(i < tp_size, true);){
+            if(tp[i] == '\\' && tp[i + 1] == '\n'){
+              i += 2;
+            }
+            else if(tp[i] == '\r'){
+              i += 1;
+            }
+            else{
+              p[p_size++] = tp[i++];
+            }
+          }
+
+          if(tp[tp_size] != '\\'){
+            p[p_size++] = tp[tp_size];
+          }
+          else{
+            /* tcc gives `error: declaration expected` */
+            /* gcc gives `warning: backslash-newline at end of file` */
+            /* clang doesnt say anything */
+          }
+        }
+
+        free(tp);
       }
 
-      FileDataVector[FileDataVectorID].p[file_input_size] = '\n';
+      if(!p_size || p[p_size - 1] != '\n'){
+        p[p_size++] = '\n';
+      }
+      p = (uint8_t *)realloc(p, p_size);
 
-      FS_file_close(&file_input);
+      FileDataVector.push_back({
+        .s = p_size,
+        .p = p
+      });
+      FileDataVectorID = FileDataVector.size() - 1;
 
       FileDataMap[abspath] = FileDataVectorID;
     }
@@ -282,12 +317,7 @@ struct pile_t{
   }
 
   void ic_unsafe(){
-    while(EXPECT(*++CurrentExpand.i == '\\', false)){
-      if(*++CurrentExpand.i != '\n'){
-        return;
-      }
-      CurrentExpand.i++;
-    }
+    ++CurrentExpand.i;
   }
   void _ic(){
     CurrentExpand.i++;
@@ -296,22 +326,8 @@ struct pile_t{
       DeexpandFile();
     }
   }
-  /* ignore basic stuff */
-  void ibs(){
-    uint8_t c;
-    while((c = gc()) == '\r' || c == '\\'){
-      _ic();
-      if(c == '\\'){
-        if(gc() != '\n'){
-          return;
-        }
-        _ic();
-      }
-    }
-  }
   void ic(){
     _ic();
-    ibs();
   }
 
   #include "Compile.h"
@@ -420,8 +436,6 @@ int main(int argc, const char **argv){
   pile.RelativePaths.push_back({});
 
   pile.ExpandFile(true, pile.filename);
-
-  pile.ibs();
 
   return pile.Compile();
 }
