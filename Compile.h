@@ -6,7 +6,7 @@ struct WordType{
 };
 
 /* tab or space */
-bool ischar_ts(uint8_t c){
+bool ischar_ts(const uint8_t &c){
   return c == ' ' || c == '\t';
 }
 bool ischar_ts(){
@@ -57,6 +57,7 @@ WordType::t IdentifyWordAndSkip(){
     return WordType::PreprocessorStart;
   }
   else{
+    printwi("cant identify %c", gc());
     __abort();
   }
 
@@ -378,8 +379,16 @@ bool Compile(){
         SkipCurrentEmptyLine();
         PreprocessorIf(0, DefineMap.find(defiden) != DefineMap.end());
       }
+      else if(!Identifier.compare("ifndef")){
+        SkipEmptyInLine();
+        auto defiden = GetIdentifier();
+        SkipCurrentEmptyLine();
+        PreprocessorIf(0, DefineMap.find(defiden) == DefineMap.end());
+      }
       else{
-        print("what is this? %.*s\n", (uintptr_t)Identifier.size(), Identifier.data());
+        printwi("unknown preprocessor identifier. %.*s",
+          (uintptr_t)Identifier.size(), Identifier.data()
+        );
         __abort();
       }
     }

@@ -111,8 +111,17 @@ struct pile_t{
 
   /* print with info */
   #define printwi(format, ...) \
+    for(uintptr_t __printwi_i = 0; ++__printwi_i < ExpandTrace.Usage() - 1;){ \
+      print( \
+        "%.*s:%lu\n", \
+        (uintptr_t)ExpandTrace[__printwi_i].FileName.s, \
+        ExpandTrace[__printwi_i].FileName.p, \
+        (uint32_t)ExpandTrace[__printwi_i].LineIndex, \
+        ##__VA_ARGS__ \
+      ); \
+    } \
     print( \
-      "%.*s:%lu: " format "\n", \
+      "%.*s:%lu\n" format "\n", \
       (uintptr_t)CurrentExpand.FileName.s, \
       CurrentExpand.FileName.p, \
       (uint32_t)CurrentExpand.LineIndex, \
@@ -249,27 +258,7 @@ struct pile_t{
         FS_file_close(&file_input);
 
         if(file_input_size){
-          uintptr_t tp_size = file_input_size - 1;
-          for(uintptr_t i = 0; EXPECT(i < tp_size, true);){
-            if(tp[i] == '\\' && tp[i + 1] == '\n'){
-              i += 2;
-            }
-            else if(tp[i] == '\r'){
-              i += 1;
-            }
-            else{
-              p[p_size++] = tp[i++];
-            }
-          }
-
-          if(tp[tp_size] != '\\'){
-            p[p_size++] = tp[tp_size];
-          }
-          else{
-            /* tcc gives `error: declaration expected` */
-            /* gcc gives `warning: backslash-newline at end of file` */
-            /* clang doesnt say anything */
-          }
+          #include "SimplifyFile1.h"
         }
 
         free(tp);
