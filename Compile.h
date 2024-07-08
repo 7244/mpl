@@ -1,10 +1,3 @@
-struct WordType{
-  using t = uint8_t;
-  enum : t{
-    PreprocessorStart
-  };
-};
-
 /* tab or space */
 bool ischar_ts(const uint8_t &c){
   return c == ' ' || c == '\t';
@@ -48,16 +41,145 @@ std::string ReadLineAsBeautyString(){
   return r;
 }
 
+struct WordType{
+  using t = uint8_t;
+  enum : t{
+    PreprocessorStart,
+    Identifier
+  };
+};
 WordType::t IdentifyWordAndSkip(){
   if(gc() == '#'){
 
-    ic();
+    ic_unsafe();
     SkipEmptyInLine();
 
     return WordType::PreprocessorStart;
   }
   else{
     printwi("cant identify %c", gc());
+    __abort();
+  }
+
+  __unreachable();
+}
+
+struct PreprocessorParseType{
+  using t = uint8_t;
+  enum : t{
+    Identifier,
+    OPLogicalNot,
+    OPBitwiseNot,
+    OPMul,
+    OPDiv,
+    OPMod,
+    Plus,
+    Minus,
+    OPLeftShift,
+    OPRightShift,
+    OPLT,
+    OPLE,
+    OPGT,
+    OPGE,
+    OPEQ,
+    OPNE,
+    OPBitwiseAnd,
+    OPBitwiseXor,
+    OPBitwiseOr,
+    OPLogicalAnd,
+    OPLogicalOr
+  };
+};
+PreprocessorParseType::t IdentifyPreprocessorParse(){
+  if(STR_ischar_char(gc()) || gc() == '_'){
+    return PreprocessorParseType::Identifier;
+  }
+  else if(gc() == '+'){
+    ic_unsafe();
+    return PreprocessorParseType::Plus;
+  }
+  else if(gc() == '-'){
+    ic_unsafe();
+    return PreprocessorParseType::Minus;
+  }
+  else if(gc() == '!'){
+    ic_unsafe();
+    if(gc() == '='){
+      ic_unsafe();
+      return PreprocessorParseType::OPNE;
+    }
+    return PreprocessorParseType::OPLogicalNot;
+  }
+  else if(gc() == '~'){
+    ic_unsafe();
+    return PreprocessorParseType::OPBitwiseNot;
+  }
+  else if(gc() == '*'){
+    ic_unsafe();
+    return PreprocessorParseType::OPMul;
+  }
+  else if(gc() == '/'){
+    ic_unsafe();
+    return PreprocessorParseType::OPDiv;
+  }
+  else if(gc() == '%'){
+    ic_unsafe();
+    return PreprocessorParseType::OPMod;
+  }
+  else if(gc() == '<'){
+    ic_unsafe();
+    if(gc() == '<'){
+      ic_unsafe();
+      return PreprocessorParseType::OPLeftShift;
+    }
+    else if(gc() == '='){
+      ic_unsafe();
+      return PreprocessorParseType::OPLE;
+    }
+    return PreprocessorParseType::OPLT;
+  }
+  else if(gc() == '>'){
+    ic_unsafe();
+    if(gc() == '>'){
+      ic_unsafe();
+      return PreprocessorParseType::OPRightShift;
+    }
+    else if(gc() == '='){
+      ic_unsafe();
+      return PreprocessorParseType::OPGE;
+    }
+    return PreprocessorParseType::OPGT;
+  }
+  else if(gc() == '='){
+    ic_unsafe();
+    if(gc() != '='){
+      __abort();
+    }
+    ic_unsafe();
+    return PreprocessorParseType::OPEQ;
+  }
+  else if(gc() == '&'){
+    ic_unsafe();
+    if(gc() == '&'){
+      ic_unsafe();
+      return PreprocessorParseType::OPLogicalAnd;
+    }
+    return PreprocessorParseType::OPBitwiseAnd;
+  }
+  else if(gc() == '^'){
+    ic_unsafe();
+    return PreprocessorParseType::OPBitwiseXor;
+  }
+  else if(gc() == '|'){
+    ic_unsafe();
+    if(gc() == '|'){
+      ic_unsafe();
+      return PreprocessorParseType::OPLogicalOr;
+    }
+    return PreprocessorParseType::OPBitwiseOr;
+  }
+  else{
+    printwi("cant identify preprocessor parse %c", gc());
     __abort();
   }
 
@@ -262,8 +384,68 @@ uint8_t SkipToNextPreprocessorScopeExit(){
 }
 
 bool GetConditionFromPreprocessor(){
-  __abort();
-  return true;
+  /*
+    defined will be solved immediately
+    0 unary+ unary- ! ~
+    1 * / %
+    2 + -
+    3 << >>
+    4 < <= > >=
+    5 == !=
+    6 &
+    7 ^
+    8 |
+    9 &&
+    10 ||
+  */
+
+  struct Scope_t{
+    struct op_t{
+      uint8_t pri;
+      uint8_t op;
+    };
+    std::vector<sint64_t> var;
+    std::vector<op_t> op;
+  };
+  std::vector<Scope_t> Scope;
+  Scope.push_back({});
+
+  while(1){
+    SkipEmptyInLine();
+    auto t = IdentifyPreprocessorParse();
+    if(t == PreprocessorParseType::Identifier){
+      auto iden = GetIdentifier();
+      if(!iden.compare("defined")){
+        std::string_view defiden;
+
+        SkipEmptyInLine();
+        if(gc() == '('){
+          ic_unsafe();
+          SkipEmptyInLine();
+          defiden = GetIdentifier();
+          SkipEmptyInLine();
+          if(gc() != ')'){
+            printwi("expected ) for defined");
+          }
+          ic_unsafe();
+        }
+        else{
+          defiden = GetIdentifier();
+        }
+
+        Scope.back().var.push_back(DefineMap.find(defiden) != DefineMap.end());
+      }
+    }
+    else if(t == PreprocessorParseType::OPLogicalAnd){
+
+    }
+    else{
+      print("type is %lu\n", (uint32_t)t);
+      __abort(); /* TODO remove this. it should be unreachable */
+    }
+  }
+
+  return Scope.back().var[0];
 }
 
 void PreprocessorIf(
@@ -384,6 +566,31 @@ bool Compile(){
         auto defiden = GetIdentifier();
         SkipCurrentEmptyLine();
         PreprocessorIf(0, DefineMap.find(defiden) == DefineMap.end());
+      }
+      else if(!Identifier.compare("if")){
+        PreprocessorIf(0, GetConditionFromPreprocessor());
+      }
+      else if(!Identifier.compare("else")){
+        if(!PreprocessorScope.size()){
+          /* else from nowhere? */
+          __abort();
+        }
+        if(PreprocessorScope.back().Condition == false){
+          /* else from nowhere? */
+          __abort();
+        }
+        SkipCurrentEmptyLine(); /* lets ignore */
+      }
+      else if(!Identifier.compare("endif")){
+        if(!PreprocessorScope.size()){
+          /* endif from nowhere? */
+          __abort();
+        }
+        if(PreprocessorScope.back().Condition == false){
+          /* endif from nowhere? */
+          __abort();
+        }
+        SkipCurrentEmptyLine(); /* lets ignore */
       }
       else if(!Identifier.compare("undef")){
         SkipEmptyInLine();

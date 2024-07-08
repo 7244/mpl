@@ -1,6 +1,10 @@
 #define salsa
 
 #ifdef salsa
+#else
+#endif
+
+#ifdef salsa
   #ifdef not_defined_name
     #some invalid stuff
     #error wrong error message0
