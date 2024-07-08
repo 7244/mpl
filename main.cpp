@@ -45,6 +45,7 @@ struct pile_t{
 
   struct{
     bool Wmacro_redefined = true;
+    bool Wmacro_not_defined = false;
   }settings;
 
   std::string filename;
@@ -109,24 +110,36 @@ struct pile_t{
     return FileDataVector[CurrentExpand.FileDataVectorID].pragma_once;
   }
 
+  void print_ExpandTrace(){
+    /* for stack heap sync */
+    ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
+
+    auto rp = &RelativePaths.back();
+    uintptr_t rpsize = rp->size();
+    for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
+      auto &et = ExpandTrace[i];
+      print(
+        "%.*s%.*s:%lu\n",
+        rpsize,
+        rp->c_str(),
+        (uintptr_t)et.FileName.s,
+        et.FileName.p,
+        (uint32_t)et.LineIndex
+      );
+      if(et.Relative){
+        rpsize -= et.PathSize;
+      }
+      else{
+        rp--;
+        rpsize = rp->size();
+      }
+    }
+  }
   /* print with info */
   #define printwi(format, ...) \
-    for(uintptr_t __printwi_i = 0; ++__printwi_i < ExpandTrace.Usage() - 1;){ \
-      print( \
-        "%.*s:%lu\n", \
-        (uintptr_t)ExpandTrace[__printwi_i].FileName.s, \
-        ExpandTrace[__printwi_i].FileName.p, \
-        (uint32_t)ExpandTrace[__printwi_i].LineIndex, \
-        ##__VA_ARGS__ \
-      ); \
-    } \
-    print( \
-      "%.*s:%lu\n" format "\n", \
-      (uintptr_t)CurrentExpand.FileName.s, \
-      CurrentExpand.FileName.p, \
-      (uint32_t)CurrentExpand.LineIndex, \
-      ##__VA_ARGS__ \
-    );
+    print(format "\n", ##__VA_ARGS__); \
+    print_ExpandTrace(); \
+    print("\n");
 
   std::string realpath(std::string p){
     auto v = ::realpath(p.c_str(), NULL);

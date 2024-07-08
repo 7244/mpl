@@ -385,6 +385,22 @@ bool Compile(){
         SkipCurrentEmptyLine();
         PreprocessorIf(0, DefineMap.find(defiden) == DefineMap.end());
       }
+      else if(!Identifier.compare("undef")){
+        SkipEmptyInLine();
+        auto defiden = GetIdentifier();
+        SkipCurrentEmptyLine();
+        if(DefineMap.find(defiden) == DefineMap.end()){
+          /* no any compiler gives error or warning about it. but i want. */
+          if(settings.Wmacro_not_defined){
+            printwi("warning, Wmacro-not-defined %.*s",
+              (uintptr_t)defiden.size(), defiden.data()
+            );
+          }
+        }
+        else{
+          DefineMap.erase(defiden);
+        }
+      }
       else{
         printwi("unknown preprocessor identifier. %.*s",
           (uintptr_t)Identifier.size(), Identifier.data()
