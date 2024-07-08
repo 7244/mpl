@@ -112,11 +112,11 @@ struct pile_t{
   /* print with info */
   #define printwi(format, ...) \
     print( \
-      format " %.*s:%lu\n", \
-      ##__VA_ARGS__, \
+      "%.*s:%lu: " format "\n", \
       (uintptr_t)CurrentExpand.FileName.s, \
       CurrentExpand.FileName.p, \
-      (uint32_t)CurrentExpand.LineIndex \
+      (uint32_t)CurrentExpand.LineIndex, \
+      ##__VA_ARGS__ \
     );
 
   std::string realpath(std::string p){

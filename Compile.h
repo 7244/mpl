@@ -198,11 +198,11 @@ void SkipCurrentEmptyLine(){
 
 void SkipCurrentLine(){
   while(1){
-    ic_unsafe();
     if(gc() == '\n'){
       ic();
       break;
     }
+    ic_unsafe();
   }
 }
 
