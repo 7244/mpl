@@ -41,14 +41,12 @@ std::string ReadLineAsBeautyString(){
   return r;
 }
 
-struct WordType{
-  using t = uint8_t;
-  enum : t{
-    PreprocessorStart,
-    Identifier
-  };
+
+enum class WordType : uint8_t{
+  PreprocessorStart,
+  Identifier
 };
-WordType::t IdentifyWordAndSkip(){
+WordType IdentifyWordAndSkip(){
   if(gc() == '#'){
 
     ic_unsafe();
@@ -64,91 +62,93 @@ WordType::t IdentifyWordAndSkip(){
   __unreachable();
 }
 
-struct PreprocessorParseType{
-  using t = uint8_t;
-  enum : t{
-    Identifier,
-    OPLogicalNot,
-    OPBitwiseNot,
-    OPMul,
-    OPDiv,
-    OPMod,
-    Plus,
-    Minus,
-    OPLeftShift,
-    OPRightShift,
-    OPLT,
-    OPLE,
-    OPGT,
-    OPGE,
-    OPEQ,
-    OPNE,
-    OPBitwiseAnd,
-    OPBitwiseXor,
-    OPBitwiseOr,
-    OPLogicalAnd,
-    OPLogicalOr
-  };
+enum class PreprocessorParseType : uint8_t{
+  endline,
+  Identifier,
+  oplognot,
+  opbinot,
+  opmul,
+  opdiv,
+  opmod,
+  plus,
+  minus,
+  oplshift,
+  oprshift,
+  oplt,
+  ople,
+  opgt,
+  opge,
+  opeq,
+  opne,
+  opbiand,
+  opbixor,
+  opbior,
+  oplogand,
+  oplogor
 };
-PreprocessorParseType::t IdentifyPreprocessorParse(){
-  if(STR_ischar_char(gc()) || gc() == '_'){
+PreprocessorParseType IdentifyPreprocessorParse(){
+  if(gc() == '\n'){
+    ic();
+    return PreprocessorParseType::endline;
+  }
+  else if(STR_ischar_char(gc()) || gc() == '_'){
     return PreprocessorParseType::Identifier;
   }
   else if(gc() == '+'){
     ic_unsafe();
-    return PreprocessorParseType::Plus;
+    return PreprocessorParseType::plus;
   }
   else if(gc() == '-'){
     ic_unsafe();
-    return PreprocessorParseType::Minus;
+    return PreprocessorParseType::minus;
   }
   else if(gc() == '!'){
     ic_unsafe();
     if(gc() == '='){
       ic_unsafe();
-      return PreprocessorParseType::OPNE;
+      return PreprocessorParseType::opne;
     }
-    return PreprocessorParseType::OPLogicalNot;
+    return PreprocessorParseType::oplognot;
   }
   else if(gc() == '~'){
     ic_unsafe();
-    return PreprocessorParseType::OPBitwiseNot;
+    return PreprocessorParseType::opbinot;
   }
   else if(gc() == '*'){
     ic_unsafe();
-    return PreprocessorParseType::OPMul;
+    return PreprocessorParseType::opmul;
   }
   else if(gc() == '/'){
     ic_unsafe();
-    return PreprocessorParseType::OPDiv;
+    return PreprocessorParseType::opdiv;
   }
   else if(gc() == '%'){
     ic_unsafe();
-    return PreprocessorParseType::OPMod;
+    return PreprocessorParseType::opmod;
   }
   else if(gc() == '<'){
     ic_unsafe();
     if(gc() == '<'){
       ic_unsafe();
-      return PreprocessorParseType::OPLeftShift;
+      return PreprocessorParseType::oplshift;
     }
     else if(gc() == '='){
       ic_unsafe();
-      return PreprocessorParseType::OPLE;
+      return PreprocessorParseType::ople;
     }
-    return PreprocessorParseType::OPLT;
+    return PreprocessorParseType::oplt;
   }
   else if(gc() == '>'){
     ic_unsafe();
     if(gc() == '>'){
       ic_unsafe();
-      return PreprocessorParseType::OPRightShift;
+      return PreprocessorParseType::oprshift;
     }
     else if(gc() == '='){
       ic_unsafe();
-      return PreprocessorParseType::OPGE;
+      return PreprocessorParseType::opge;
     }
-    return PreprocessorParseType::OPGT;
+    return PreprocessorParseType::opgt;
   }
   else if(gc() == '='){
     ic_unsafe();
@@ -156,27 +156,27 @@ PreprocessorParseType::t IdentifyPreprocessorParse(){
       __abort();
     }
     ic_unsafe();
-    return PreprocessorParseType::OPEQ;
+    return PreprocessorParseType::opeq;
   }
   else if(gc() == '&'){
     ic_unsafe();
     if(gc() == '&'){
       ic_unsafe();
-      return PreprocessorParseType::OPLogicalAnd;
+      return PreprocessorParseType::oplogand;
     }
-    return PreprocessorParseType::OPBitwiseAnd;
+    return PreprocessorParseType::opbiand;
   }
   else if(gc() == '^'){
     ic_unsafe();
-    return PreprocessorParseType::OPBitwiseXor;
+    return PreprocessorParseType::opbixor;
   }
   else if(gc() == '|'){
     ic_unsafe();
     if(gc() == '|'){
       ic_unsafe();
-      return PreprocessorParseType::OPLogicalOr;
+      return PreprocessorParseType::oplogor;
     }
-    return PreprocessorParseType::OPBitwiseOr;
+    return PreprocessorParseType::opbior;
   }
   else{
     printwi("cant identify preprocessor parse %c", gc());
@@ -383,7 +383,9 @@ uint8_t SkipToNextPreprocessorScopeExit(){
   }
 }
 
-bool GetConditionFromPreprocessor(){
+sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
+  auto StackStart = stack;
+
   /*
     defined will be solved immediately
     0 unary+ unary- ! ~
@@ -397,55 +399,358 @@ bool GetConditionFromPreprocessor(){
     8 |
     9 &&
     10 ||
+    11 reserved. used for initial priority
   */
 
-  struct Scope_t{
-    struct op_t{
-      uint8_t pri;
-      uint8_t op;
-    };
-    std::vector<sint64_t> var;
-    std::vector<op_t> op;
+  enum class ops : uint8_t{
+    unaryp,
+    unarym,
+    lognot,
+    binot,
+
+    mul,
+    div,
+    mod,
+
+    plus,
+    minus,
+
+    lshift,
+    rshift,
+
+    lt,
+    le,
+    gt,
+    ge,
+
+    eq,
+    ne,
+
+    biand,
+
+    bixor,
+
+    bior,
+
+    logand,
+
+    logor
   };
-  std::vector<Scope_t> Scope;
-  Scope.push_back({});
+
+  /* get priority */
+  auto gp = [&](ops op) -> uint8_t {
+    switch(op){
+      case ops::unaryp:
+      case ops::unarym:
+      case ops::lognot:
+      case ops::binot:
+        return 0;
+      case ops::mul:
+      case ops::div:
+      case ops::mod:
+        return 1;
+      case ops::plus:
+      case ops::minus:
+        return 2;
+      case ops::lshift:
+      case ops::rshift:
+        return 3;
+      case ops::lt:
+      case ops::le:
+      case ops::gt:
+      case ops::ge:
+        return 4;
+      case ops::eq:
+      case ops::ne:
+        return 5;
+      case ops::biand:
+        return 6;
+      case ops::bixor:
+        return 7;
+      case ops::bior:
+        return 8;
+      case ops::logand:
+        return 9;
+      case ops::logor:
+        return 10;
+    }
+    __unreachable();
+  };
+
+  /* last priority */
+  uint8_t lp = 11;
+
+  bool LastStackIsVariable = false;
+
+  auto Process = [&]() -> void {
+    auto glv = [&]() -> sint64_t {
+      auto ret = *(sint64_t *)stack;
+      stack -= sizeof(sint64_t);
+      return ret;
+    };
+
+    if(!LastStackIsVariable){
+      printwi("TODO how to describe this error?");
+      __abort();
+    }
+
+    auto rv = *(sint64_t *)stack;
+    stack -= sizeof(sint64_t);
+
+    while(stack != StackStart){
+      ops op = (ops)*--stack;
+
+      switch(op){
+        case ops::unaryp:{
+          rv = +rv;
+          break;
+        }
+        case ops::unarym:{
+          rv = -rv;
+          break;
+        }
+        case ops::lognot:{
+          rv = !rv;
+          break;
+        }
+        case ops::binot:{
+          rv = ~rv;
+          break;
+        }
+        case ops::mul:{
+          __abort();
+          break;
+        }
+        case ops::div:{
+          __abort();
+          break;
+        }
+        case ops::mod:{
+          __abort();
+          break;
+        }
+        case ops::plus:{
+          __abort();
+          break;
+        }
+        case ops::minus:{
+          __abort();
+          break;
+        }
+        case ops::lshift:{
+          __abort();
+          break;
+        }
+        case ops::rshift:{
+          __abort();
+          break;
+        }
+        case ops::lt:{
+          __abort();
+          break;
+        }
+        case ops::le:{
+          __abort();
+          break;
+        }
+        case ops::gt:{
+          __abort();
+          break;
+        }
+        case ops::ge:{
+          __abort();
+          break;
+        }
+        case ops::eq:{
+          __abort();
+          break;
+        }
+        case ops::ne:{
+          __abort();
+          break;
+        }
+        case ops::biand:{
+          __abort();
+          break;
+        }
+        case ops::bixor:{
+          __abort();
+          break;
+        }
+        case ops::bior:{
+          __abort();
+          break;
+        }
+        case ops::logand:{
+          rv = glv() && rv;
+          break;
+        }
+        case ops::logor:{
+          __abort();
+          break;
+        }
+      }
+    }
+
+    *(sint64_t *)stack = rv;
+    stack += sizeof(sint64_t);
+  };
+
+  auto AddOP = [&](ops new_op) -> void {
+    LastStackIsVariable = false;
+
+    auto p = gp(new_op);
+    if(p < lp){
+      *stack++ = (uint8_t)new_op;
+      lp = p;
+      return;
+    }
+    __abort();
+  };
 
   while(1){
     SkipEmptyInLine();
     auto t = IdentifyPreprocessorParse();
-    if(t == PreprocessorParseType::Identifier){
-      auto iden = GetIdentifier();
-      if(!iden.compare("defined")){
-        std::string_view defiden;
-
-        SkipEmptyInLine();
-        if(gc() == '('){
-          ic_unsafe();
-          SkipEmptyInLine();
-          defiden = GetIdentifier();
-          SkipEmptyInLine();
-          if(gc() != ')'){
-            printwi("expected ) for defined");
-          }
-          ic_unsafe();
-        }
-        else{
-          defiden = GetIdentifier();
-        }
-
-        Scope.back().var.push_back(DefineMap.find(defiden) != DefineMap.end());
+    switch(t){
+      case PreprocessorParseType::endline:{
+        goto gt_end;
       }
-    }
-    else if(t == PreprocessorParseType::OPLogicalAnd){
+      case PreprocessorParseType::Identifier:{
+        auto iden = GetIdentifier();
+        if(!iden.compare("defined")){
+          std::string_view defiden;
 
-    }
-    else{
-      print("type is %lu\n", (uint32_t)t);
-      __abort(); /* TODO remove this. it should be unreachable */
+          SkipEmptyInLine();
+          if(gc() == '('){
+            ic_unsafe();
+            SkipEmptyInLine();
+            defiden = GetIdentifier();
+            SkipEmptyInLine();
+            if(gc() != ')'){
+              printwi("expected ) for defined");
+            }
+            ic_unsafe();
+          }
+          else{
+            defiden = GetIdentifier();
+          }
+
+          *(sint64_t *)stack = DefineMap.find(defiden) != DefineMap.end();
+          stack += sizeof(sint64_t);
+
+          LastStackIsVariable = true;
+        }
+        break;
+      }
+      case PreprocessorParseType::oplognot:{
+        AddOP(ops::lognot);
+        break;
+      }
+      case PreprocessorParseType::opbinot:{
+        AddOP(ops::binot);
+        break;
+      }
+      case PreprocessorParseType::opmul:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::mul);
+        break;
+      }
+      case PreprocessorParseType::opdiv:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::div);
+        break;
+      }
+      case PreprocessorParseType::opmod:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::mod);
+        break;
+      }
+      case PreprocessorParseType::plus:{
+        __abort();
+        break;
+      }
+      case PreprocessorParseType::minus:{
+        __abort();
+        break;
+      }
+      case PreprocessorParseType::oplshift:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::lshift);
+        break;
+      }
+      case PreprocessorParseType::oprshift:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::rshift);
+        break;
+      }
+      case PreprocessorParseType::oplt:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::lt);
+        break;
+      }
+      case PreprocessorParseType::ople:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::le);
+        break;
+      }
+      case PreprocessorParseType::opgt:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::gt);
+        break;
+      }
+      case PreprocessorParseType::opge:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::ge);
+        break;
+      }
+      case PreprocessorParseType::opeq:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::eq);
+        break;
+      }
+      case PreprocessorParseType::opne:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::ne);
+        break;
+      }
+      case PreprocessorParseType::opbiand:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::biand);
+        break;
+      }
+      case PreprocessorParseType::opbixor:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::bixor);
+        break;
+      }
+      case PreprocessorParseType::opbior:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::bior);
+        break;
+      }
+      case PreprocessorParseType::oplogand:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::logand);
+        break;
+      }
+      case PreprocessorParseType::oplogor:{
+        if(!LastStackIsVariable){ __abort(); }
+        AddOP(ops::logor);
+        break;
+      }
     }
   }
 
-  return Scope.back().var[0];
+  gt_end:
+
+  Process();
+
+  return *(sint64_t *)stack;
+}
+
+bool GetConditionFromPreprocessor(){
+  uint8_t stack[0x1000];
+  return !!_GetConditionFromPreprocessor(stack);
 }
 
 void PreprocessorIf(
