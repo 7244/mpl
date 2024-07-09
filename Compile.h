@@ -64,6 +64,8 @@ WordType IdentifyWordAndSkip(){
 
 enum class PreprocessorParseType : uint8_t{
   endline,
+  parentheseopen,
+  parentheseclose,
   Identifier,
   oplognot,
   opbinot,
@@ -90,6 +92,14 @@ PreprocessorParseType IdentifyPreprocessorParse(){
   if(gc() == '\n'){
     ic();
     return PreprocessorParseType::endline;
+  }
+  else if(gc() == '('){
+    ic_unsafe();
+    return PreprocessorParseType::parentheseopen;
+  }
+  else if(gc() == ')'){
+    ic_unsafe();
+    return PreprocessorParseType::parentheseclose;
   }
   else if(STR_ischar_char(gc()) || gc() == '_'){
     return PreprocessorParseType::Identifier;
@@ -586,7 +596,7 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
           break;
         }
         case ops::logor:{
-          __abort();
+          rv = glv() || rv;
           break;
         }
       }
@@ -615,6 +625,15 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
       case PreprocessorParseType::endline:{
         goto gt_end;
       }
+      case PreprocessorParseType::parentheseopen:{
+        _GetConditionFromPreprocessor(stack);
+        stack += sizeof(sint64_t);
+
+        LastStackIsVariable = true;
+      }
+      case PreprocessorParseType::parentheseclose:{
+        goto gt_end;
+      }
       case PreprocessorParseType::Identifier:{
         auto iden = GetIdentifier();
         if(!iden.compare("defined")){
@@ -639,6 +658,9 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
           stack += sizeof(sint64_t);
 
           LastStackIsVariable = true;
+        }
+        else{
+          __abort();
         }
         break;
       }
