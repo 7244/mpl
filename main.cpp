@@ -45,6 +45,8 @@ struct pile_t{
 
   struct{
     bool Wmacro_redefined = true;
+
+    /* no any compiler gives error or warning about it. but i want. */
     bool Wmacro_not_defined = false;
   }settings;
 
@@ -119,12 +121,12 @@ struct pile_t{
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
       print(
-        "%.*s%.*s:%lu\n",
+        "%.*s%.*s:%u\n",
         rpsize,
         rp->c_str(),
         (uintptr_t)et.FileName.s,
         et.FileName.p,
-        (uint32_t)et.LineIndex
+        (uintptr_t)et.i - (uintptr_t)FileDataVector[et.FileDataVectorID].p
       );
       if(et.Relative){
         rpsize -= et.PathSize;

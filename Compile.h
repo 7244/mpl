@@ -66,6 +66,7 @@ enum class PreprocessorParseType : uint8_t{
   endline,
   parentheseopen,
   parentheseclose,
+  number,
   Identifier,
   oplognot,
   opbinot,
@@ -100,6 +101,9 @@ PreprocessorParseType IdentifyPreprocessorParse(){
   else if(gc() == ')'){
     ic_unsafe();
     return PreprocessorParseType::parentheseclose;
+  }
+  else if(STR_ischar_digit(gc())){
+    return PreprocessorParseType::number;
   }
   else if(STR_ischar_char(gc()) || gc() == '_'){
     return PreprocessorParseType::Identifier;
@@ -196,6 +200,7 @@ PreprocessorParseType IdentifyPreprocessorParse(){
   __unreachable();
 }
 
+/* TOOD no need to use r. can use expand i pointer */
 uintptr_t _GetIdentifier(){
   uintptr_t r = 1;
 
@@ -607,15 +612,15 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
   };
 
   auto AddOP = [&](ops new_op) -> void {
-    LastStackIsVariable = false;
 
     auto p = gp(new_op);
-    if(p < lp){
-      *stack++ = (uint8_t)new_op;
-      lp = p;
-      return;
+    if(p >= lp){
+      Process();
     }
-    __abort();
+
+    *stack++ = (uint8_t)new_op;
+    lp = p;
+    LastStackIsVariable = false;
   };
 
   while(1){
@@ -630,9 +635,15 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
         stack += sizeof(sint64_t);
 
         LastStackIsVariable = true;
+
+        break;
       }
       case PreprocessorParseType::parentheseclose:{
         goto gt_end;
+      }
+      case PreprocessorParseType::number:{
+        __abort();
+        break;
       }
       case PreprocessorParseType::Identifier:{
         auto iden = GetIdentifier();
@@ -660,7 +671,22 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
           LastStackIsVariable = true;
         }
         else{
-          __abort();
+          auto d = DefineMap.find(iden);
+          if(d == DefineMap.end()){
+            if(settings.Wmacro_not_defined){
+              printwi("warning, Wmacro-not-defined %.*s",
+                (uintptr_t)iden.size(), iden.data()
+              );
+            }
+
+            *(sint64_t *)stack = 0;
+            stack += sizeof(sint64_t);
+
+            LastStackIsVariable = true;
+          }
+          else{
+            __abort();
+          }
         }
         break;
       }
@@ -828,9 +854,13 @@ bool Compile(){
         return 0;
       }
       else if(!Identifier.compare("error")){
-        auto errstr = ReadLineAsBeautyString();
-        printwi("#error %s", errstr.c_str());
+        auto str = ReadLineAsBeautyString();
+        printwi("#error %s", str.c_str());
         PR_exit(1);
+      }
+      else if(!Identifier.compare("warning")){
+        auto str = ReadLineAsBeautyString();
+        printwi("#warning %s", str.c_str());
       }
       else if(!Identifier.compare("include")){
         SkipEmptyInLine();
@@ -924,7 +954,6 @@ bool Compile(){
         auto defiden = GetIdentifier();
         SkipCurrentEmptyLine();
         if(DefineMap.find(defiden) == DefineMap.end()){
-          /* no any compiler gives error or warning about it. but i want. */
           if(settings.Wmacro_not_defined){
             printwi("warning, Wmacro-not-defined %.*s",
               (uintptr_t)defiden.size(), defiden.data()
