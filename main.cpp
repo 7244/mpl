@@ -53,13 +53,30 @@ struct pile_t{
 
   std::vector<std::string> RelativePaths;
 
-  struct Define_t{
-    bool isfunc;
-    std::vector<std::string> Inputs;
-    bool va_args;
+  #define BLL_set_prefix DefineDataList
+  #define BLL_set_Link 0
+  #define BLL_set_Recycle 1
+  #define BLL_set_IntegerNR 1
+  #define BLL_set_CPP_ConstructDestruct 1
+  #define BLL_set_CPP_Node_ConstructDestruct 1
+  #define BLL_set_CPP_CopyAtPointerChange 1
+  #define BLL_set_AreWeInsideStruct 1
+  #define BLL_set_NodeData \
+    bool isfunc; \
+    std::vector<std::string> Inputs; \
+    bool va_args; \
     std::string Output;
-  };
-  std::map<std::string_view, Define_t> DefineMap;
+  #define BLL_set_type_node uintptr_t
+  #include <BLL/BLL.h>
+  DefineDataList_t DefineDataList;
+  struct DefineDataMap_t : std::map<std::string_view, uintptr_t>{
+    void erase(auto i){
+      auto o = operator[](i);
+      auto &pile = *OFFSETLESS(this, pile_t, DefineDataMap);
+      pile.DefineDataList.Recycle(o);
+      std::map<std::string_view, uintptr_t>::erase(i);
+    }
+  }DefineDataMap;
 
   struct PreprocessorScope_t{
     /* 0 #if, 1 #elif, 2 #else */
@@ -287,17 +304,28 @@ struct pile_t{
 
     ExpandTraceFileAdd(FileDataID, Relative, 0);
   }
-  void DeexpandFile(){
+  void _DeexpandFile(){
     if(CurrentExpand.Relative){
       auto &rp = RelativePaths.back();
       rp = rp.substr(0, rp.size() - CurrentExpand.PathSize);
     }
-    else if(CurrentExpand.Relative){
+    else if(!CurrentExpand.Relative){
       RelativePaths.pop_back();
     }
-
+  }
+  void _Deexpand(){
     ExpandTrace.dec();
     CurrentExpand = ExpandTrace[ExpandTrace.Usage() - 1];
+  }
+  void Deexpand(){
+    if(CurrentExpand.DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
+      _DeexpandFile();
+    }
+    else{
+      __abort();
+    }
+
+    _Deexpand();
   }
 
   /* get char */
@@ -312,7 +340,7 @@ struct pile_t{
     CurrentExpand.i++;
 
     while(CurrentExpand.i == CurrentExpand.s){
-      DeexpandFile();
+      Deexpand();
     }
   }
   void ic(){

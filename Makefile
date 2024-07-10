@@ -2,7 +2,7 @@ OUTPUT = a.exe
 
 LINK =
 INCLUDE = 
-CS = -Wall -Wextra -std=c++2a -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses
+CS = -Wall -Wextra -std=c++2a -Wno-unused-parameter -Wno-sign-compare -Wno-shift-op-parentheses -Wno-invalid-offsetof
 
 debug:
 	clang++ $(CS) -g main.cpp -o $(OUTPUT) $(INCLUDE) $(LINK)

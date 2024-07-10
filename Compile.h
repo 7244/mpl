@@ -714,14 +714,14 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
             defiden = GetIdentifier();
           }
 
-          *(sint64_t *)stack = DefineMap.find(defiden) != DefineMap.end();
+          *(sint64_t *)stack = DefineDataMap.find(defiden) != DefineDataMap.end();
           stack += sizeof(sint64_t);
 
           LastStackIsVariable = true;
         }
         else{
-          auto d = DefineMap.find(iden);
-          if(d == DefineMap.end()){
+          auto d = DefineDataMap.find(iden);
+          if(d == DefineDataMap.end()){
             if(settings.Wmacro_not_defined){
               printwi("warning, Wmacro-not-defined %.*s",
                 (uintptr_t)iden.size(), iden.data()
@@ -873,7 +873,7 @@ bool GetPreprocessorCondition(uint8_t ConditionType){
   SkipEmptyInLine();
   auto defiden = GetIdentifier();
   SkipCurrentEmptyLine();
-  return DefineMap.find(defiden) != DefineMap.end() ^ ConditionType;
+  return DefineDataMap.find(defiden) != DefineDataMap.end() ^ ConditionType;
 }
 
 void PreprocessorIf(
@@ -958,7 +958,8 @@ bool Compile(){
             GetPragmaOnce() = true;
           }
           else{
-            DeexpandFile();
+            _DeexpandFile();
+            _Deexpand();
           }
         }
         else{
@@ -969,31 +970,32 @@ bool Compile(){
         SkipEmptyInLine();
         auto defiden = GetIdentifier();
 
-        auto did = DefineMap.find(defiden);
-        if(did != DefineMap.end()){
+        auto dmid = DefineDataMap.find(defiden);
+        if(dmid != DefineDataMap.end()){
           if(settings.Wmacro_redefined){
             printwi("macro is redefined");
           }
-          DefineMap.erase(defiden);
+          DefineDataMap.erase(defiden);
         }
 
-        Define_t Define;
+        auto ddid = DefineDataList.NewNode();
+        auto &d = DefineDataList[ddid];
         if(gc() == '('){
-          Define.isfunc = true;
+          d.isfunc = true;
           ic();
-          GetDefineParams(Define.Inputs, Define.va_args);
+          GetDefineParams(d.Inputs, d.va_args);
         }
         else if(ischar_ts()){
-          Define.isfunc = false;
+          d.isfunc = false;
           ic();
         }
         else if(gc() != '\n'){
           __abort();
         }
 
-        Define.Output = ReadLineAsBeautyString();
+        d.Output = ReadLineAsBeautyString();
 
-        DefineMap[defiden] = Define;
+        DefineDataMap[defiden] = ddid;
       }
       else if(!Identifier.compare("ifdef")){
         PreprocessorIf(0, 0);
@@ -1017,7 +1019,7 @@ bool Compile(){
         SkipEmptyInLine();
         auto defiden = GetIdentifier();
         SkipCurrentEmptyLine();
-        if(DefineMap.find(defiden) == DefineMap.end()){
+        if(DefineDataMap.find(defiden) == DefineDataMap.end()){
           if(settings.Wmacro_not_defined){
             printwi("warning, Wmacro-not-defined %.*s",
               (uintptr_t)defiden.size(), defiden.data()
@@ -1025,7 +1027,7 @@ bool Compile(){
           }
         }
         else{
-          DefineMap.erase(defiden);
+          DefineDataMap.erase(defiden);
         }
       }
       else{
