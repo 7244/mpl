@@ -75,7 +75,7 @@ struct pile_t{
     /* 0 #if, 1 #elif, 2 #else */
     uint8_t Type = 0;
 
-    bool Condition;
+    bool DidRan = 0;
   };
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
@@ -142,6 +142,10 @@ struct pile_t{
     print(format "\n", ##__VA_ARGS__); \
     print_ExpandTrace(); \
     print("\n");
+  #define errprint_exit(...) \
+    printwi(__VA_ARGS__) \
+    PR_exit(1); \
+    __unreachable();
 
   std::string realpath(std::string p){
     auto v = ::realpath(p.c_str(), NULL);

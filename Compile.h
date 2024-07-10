@@ -278,8 +278,7 @@ void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
     }
     else if(gc() == ','){
       if(!in.size()){
-        printwi("zero length parameter name");
-        PR_exit(1);
+        errprint_exit("zero length define parameter name");
       }
       Inputs.push_back(in);
       in = {};
@@ -288,13 +287,11 @@ void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
     else if(gc() == '.'){
       ic();
       if(gc() != '.'){
-        printwi("expected ...");
-        PR_exit(1);
+        errprint_exit("expected ...");
       }
       ic();
       if(gc() != '.'){
-        printwi("expected ...");
-        PR_exit(1);
+        errprint_exit("expected ...");
       }
       ic();
       va_args = true;
@@ -302,8 +299,7 @@ void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
         ic();
       }
       if(gc() != ')'){
-        printwi("expected ) after ...");
-        PR_exit(1);
+        errprint_exit("expected ) after ...");
       }
       ic();
       break;
@@ -398,7 +394,56 @@ uint8_t SkipToNextPreprocessorScopeExit(){
   }
 }
 
-sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
+sint64_t GetPreprocessorNumber(){
+  sint64_t tv = 0;
+  do{
+    tv += gc() - '0';
+    tv *= 10;
+    ic_unsafe();
+  }while(STR_ischar_digit(gc()));
+
+  sint64_t v = 0;
+  while(tv){
+    tv /= 10;
+    v += tv % 10;
+  }
+
+  uintptr_t literal_u = 0;
+  uintptr_t literal_l = 0;
+  uintptr_t literal_z = 0;
+
+  while(STR_ischar_char(gc())){
+    if(gc() == 'u' || gc() == 'U'){
+      if(EXPECT(++literal_u > 1, false)){
+        errprint_exit("double integer literal u.");
+      }
+    }
+    else if(gc() == 'l' || gc() == 'L'){
+      if(EXPECT(++literal_l > 2, false)){
+        errprint_exit("triple integer literal l.");
+      }
+    }
+    else if(gc() == 'z' || gc() == 'Z'){
+      if(EXPECT(++literal_z > 1, false)){
+        errprint_exit("double integer literal z.");
+      }
+    }
+    else [[unlikely]] {
+      errprint_exit("invalid integer literal \"%lc\"", gc());
+    }
+    ic_unsafe();
+  }
+
+  if(literal_l && literal_z){
+    errprint_exit("integer literal l and z cant be in same place");
+  }
+
+  /* TOOD how to use these literals? */
+
+  return v;
+}
+
+sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
   auto StackStart = stack;
 
   /*
@@ -549,7 +594,7 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
           break;
         }
         case ops::minus:{
-          __abort();
+          rv = glv() - rv;
           break;
         }
         case ops::lshift:{
@@ -561,19 +606,19 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
           break;
         }
         case ops::lt:{
-          __abort();
+          rv = glv() < rv;
           break;
         }
         case ops::le:{
-          __abort();
+          rv = glv() <= rv;
           break;
         }
         case ops::gt:{
-          __abort();
+          rv = glv() > rv;
           break;
         }
         case ops::ge:{
-          __abort();
+          rv = glv() >= rv;
           break;
         }
         case ops::eq:{
@@ -631,7 +676,7 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
         goto gt_end;
       }
       case PreprocessorParseType::parentheseopen:{
-        _GetConditionFromPreprocessor(stack);
+        _ParsePreprocessorToCondition(stack);
         stack += sizeof(sint64_t);
 
         LastStackIsVariable = true;
@@ -642,7 +687,11 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
         goto gt_end;
       }
       case PreprocessorParseType::number:{
-        __abort();
+        *(sint64_t *)stack = GetPreprocessorNumber();
+        stack += sizeof(sint64_t);
+
+        LastStackIsVariable = true;
+        
         break;
       }
       case PreprocessorParseType::Identifier:{
@@ -714,11 +763,21 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
         break;
       }
       case PreprocessorParseType::plus:{
-        __abort();
+        if(LastStackIsVariable){
+          AddOP(ops::plus);
+        }
+        else{
+          AddOP(ops::unaryp);
+        }
         break;
       }
       case PreprocessorParseType::minus:{
-        __abort();
+        if(LastStackIsVariable){
+          AddOP(ops::minus);
+        }
+        else{
+          AddOP(ops::unarym);
+        }
         break;
       }
       case PreprocessorParseType::oplshift:{
@@ -796,19 +855,35 @@ sint64_t _GetConditionFromPreprocessor(uint8_t *stack){
   return *(sint64_t *)stack;
 }
 
-bool GetConditionFromPreprocessor(){
+bool ParsePreprocessorToCondition(){
   uint8_t stack[0x1000];
-  return !!_GetConditionFromPreprocessor(stack);
+  return !!_ParsePreprocessorToCondition(stack);
+}
+
+bool GetPreprocessorCondition(uint8_t ConditionType){
+  if(ConditionType == 2){
+    return ParsePreprocessorToCondition();
+  }
+  else if(ConditionType == 3){
+    return true;
+  }
+
+  /* condition is 0 or 1 */
+
+  SkipEmptyInLine();
+  auto defiden = GetIdentifier();
+  SkipCurrentEmptyLine();
+  return DefineMap.find(defiden) != DefineMap.end() ^ ConditionType;
 }
 
 void PreprocessorIf(
   uint8_t Type, /* check PreprocessorScope_t */
-  bool Condition
+  uint8_t ConditionType
 ){
   gt_begin:;
 
   if(Type == 0){
-    PreprocessorScope.push_back({.Condition = Condition});
+    PreprocessorScope.push_back({});
   }
   else{
     if(!PreprocessorScope.size()){
@@ -820,19 +895,26 @@ void PreprocessorIf(
       printwi("double #else or #elif after #else");
       __abort();
     }
+    if(Type == 3){
+      PreprocessorScope.pop_back();
+      return;
+    }
     ps.Type = Type;
   }
 
-  if(!Condition){
-    Type = SkipToNextPreprocessorScopeExit();
-    if(Type == 3){
+  if(!PreprocessorScope.back().DidRan){
+    auto Condition = GetPreprocessorCondition(ConditionType);
+    if(Condition){
+      PreprocessorScope.back().DidRan = true;
       return;
     }
-    else if(Type == 2){
-      Condition = true;
+
+    Type = SkipToNextPreprocessorScopeExit();
+    if(Type == 1){ /* else if */
+      ConditionType = 2;
     }
-    else{ /* 1 */
-      Condition = GetConditionFromPreprocessor();
+    else if(Type == 2){ /* else */
+      ConditionType = 3;
     }
     goto gt_begin;
   }
@@ -855,8 +937,7 @@ bool Compile(){
       }
       else if(!Identifier.compare("error")){
         auto str = ReadLineAsBeautyString();
-        printwi("#error %s", str.c_str());
-        PR_exit(1);
+        errprint_exit("#error %s", str.c_str());
       }
       else if(!Identifier.compare("warning")){
         auto str = ReadLineAsBeautyString();
@@ -913,41 +994,22 @@ bool Compile(){
         DefineMap[defiden] = Define;
       }
       else if(!Identifier.compare("ifdef")){
-        SkipEmptyInLine();
-        auto defiden = GetIdentifier();
-        SkipCurrentEmptyLine();
-        PreprocessorIf(0, DefineMap.find(defiden) != DefineMap.end());
+        PreprocessorIf(0, 0);
       }
       else if(!Identifier.compare("ifndef")){
-        SkipEmptyInLine();
-        auto defiden = GetIdentifier();
-        SkipCurrentEmptyLine();
-        PreprocessorIf(0, DefineMap.find(defiden) == DefineMap.end());
+        PreprocessorIf(0, 1);
       }
       else if(!Identifier.compare("if")){
-        PreprocessorIf(0, GetConditionFromPreprocessor());
+        PreprocessorIf(0, 2);
+      }
+      else if(!Identifier.compare("elif")){
+        PreprocessorIf(1, 2);
       }
       else if(!Identifier.compare("else")){
-        if(!PreprocessorScope.size()){
-          /* else from nowhere? */
-          __abort();
-        }
-        if(PreprocessorScope.back().Condition == false){
-          /* else from nowhere? */
-          __abort();
-        }
-        SkipCurrentEmptyLine(); /* lets ignore */
+        PreprocessorIf(2, 3);
       }
       else if(!Identifier.compare("endif")){
-        if(!PreprocessorScope.size()){
-          /* endif from nowhere? */
-          __abort();
-        }
-        if(PreprocessorScope.back().Condition == false){
-          /* endif from nowhere? */
-          __abort();
-        }
-        SkipCurrentEmptyLine(); /* lets ignore */
+        PreprocessorIf(3, 0);
       }
       else if(!Identifier.compare("undef")){
         SkipEmptyInLine();
