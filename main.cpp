@@ -24,25 +24,6 @@ void print(const char *format, ...){
 }
 
 struct pile_t{
-  struct StringSize_t{
-    uint32_t s; /* TOOD hardcoded type */
-    uint8_t *p;
-
-    ~StringSize_t(){
-      if(s){
-        A_resize(p, 0);
-      }
-    }
-  };
-
-  void AddVoidToString(std::string &str, uintptr_t s, const void *v){
-    auto p = (const uint8_t *)v;
-    auto stop = &p[s];
-    while(p != stop){
-      str += *p++;
-    }
-  }
-
   struct{
     bool Wmacro_redefined = true;
 
@@ -57,6 +38,8 @@ struct pile_t{
 
     uintptr_t s;
     uint8_t *p;
+
+    std::string FileName;
   };
   std::vector<RawData_t> FileDataVector;
   std::map<std::string, uintptr_t> FileDataMap; /* points FileDataVector */
@@ -83,8 +66,6 @@ struct pile_t{
     bool Relative;
 
     uintptr_t PathSize;
-
-    StringSize_t FileName;
 
     uintptr_t FileDataVectorID;
 
@@ -120,13 +101,14 @@ struct pile_t{
     uintptr_t rpsize = rp->size();
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
+      auto &f = FileDataVector[et.FileDataVectorID];
       print(
         "%.*s%.*s:%u\n",
         rpsize,
         rp->c_str(),
-        (uintptr_t)et.FileName.s,
-        et.FileName.p,
-        (uintptr_t)et.i - (uintptr_t)FileDataVector[et.FileDataVectorID].p
+        (uintptr_t)f.FileName.size(),
+        f.FileName.data(),
+        (uintptr_t)et.i - (uintptr_t)f.p
       );
       if(et.Relative){
         rpsize -= et.PathSize;
@@ -162,14 +144,10 @@ struct pile_t{
   void _ExpandTraceSet(
     bool Relative,
     uintptr_t PathSize,
-    uintptr_t FileNameSize,
-    uint8_t *FileName,
     uintptr_t FileDataVectorID
   ){
     CurrentExpand.Relative = Relative;
     CurrentExpand.PathSize = PathSize;
-    CurrentExpand.FileName.s = FileNameSize;
-    CurrentExpand.FileName.p = FileName;
     CurrentExpand.FileDataVectorID = FileDataVectorID;
 
     auto &fd = FileDataVector[FileDataVectorID];
@@ -182,8 +160,6 @@ struct pile_t{
   void ExpandTraceAdd(
     bool Relative,
     uintptr_t PathSize,
-    uintptr_t FileNameSize,
-    uint8_t *FileName,
     uintptr_t FileDataVectorID
   ){
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
@@ -193,8 +169,6 @@ struct pile_t{
     _ExpandTraceSet(
       Relative,
       PathSize,
-      FileNameSize,
-      FileName,
       FileDataVectorID
     );
   }
@@ -212,12 +186,10 @@ struct pile_t{
         printwi("failed to find non relative include");
       }
 
-      RelativePaths[RelativePaths.size() - 1].append(DefaultInclude[i]);
+      RelativePaths.back().append(DefaultInclude[i]);
     }
 
-    uintptr_t FileNameSize;
-    uint8_t *FileName;
-
+    std::string FileName;
     {
       sintptr_t i = PathName.size();
       while(i--){
@@ -228,16 +200,13 @@ struct pile_t{
 
       /* TODO check if slash has something before itself */
 
-      FileNameSize = PathName.size() - i - 1;
-      FileName = (uint8_t *)A_resize(NULL, FileNameSize);
-      __MemoryCopy(&PathName[i + 1], FileName, FileNameSize);
+      FileName = std::string((const char *)&PathName[i + 1], PathName.size() - i - 1);
       if(i > 0){
-        RelativePaths[RelativePaths.size() - 1].append(PathName, 0, i + 1);
+        RelativePaths.back().append(PathName, 0, i + 1);
       }
     }
 
-    std::string abspath = RelativePaths[RelativePaths.size() - 1];
-    AddVoidToString(abspath, FileNameSize, FileName);
+    std::string abspath = RelativePaths.back() + FileName;
 
     uintptr_t FileDataVectorID;
 
@@ -290,7 +259,8 @@ struct pile_t{
 
       FileDataVector.push_back({
         .s = p_size,
-        .p = p
+        .p = p,
+        .FileName = FileName
       });
       FileDataVectorID = FileDataVector.size() - 1;
 
@@ -304,11 +274,11 @@ struct pile_t{
       #endif
     }
 
-    ExpandTraceAdd(Relative, 0, FileNameSize, FileName, FileDataVectorID);
+    ExpandTraceAdd(Relative, 0, FileDataVectorID);
   }
   void DeexpandFile(){
     if(CurrentExpand.Relative){
-      auto &rp = RelativePaths[RelativePaths.size() - 1];
+      auto &rp = RelativePaths.back();
       rp = rp.substr(0, rp.size() - CurrentExpand.PathSize);
     }
     else if(CurrentExpand.Relative){
@@ -438,7 +408,7 @@ int main(int argc, const char **argv){
     .s = 6,
     .p = (uint8_t *)"\n#eof\n"
   });
-  pile._ExpandTraceSet(true, 0, 0, NULL, 0);
+  pile._ExpandTraceSet(true, 0, 0);
   pile.ExpandTrace.inc();
 
   pile.RelativePaths.push_back({});

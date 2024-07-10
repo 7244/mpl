@@ -918,6 +918,8 @@ void PreprocessorIf(
     }
     goto gt_begin;
   }
+
+  SkipCurrentLine();
 }
 
 bool Compile(){
