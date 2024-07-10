@@ -70,13 +70,16 @@ struct pile_t{
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
   struct expandtrace_data_t{
-    bool Relative;
+    /* we do little bit trick here */
+    /* DataID can point file or define so */
+    /* so if it has biggest bit set, it means file. if not, its define. */
+    uintptr_t DataID;
 
+    /* they are only used if data is file */
+    bool Relative;
     uintptr_t PathSize;
 
-    uintptr_t FileDataID;
-
-    /* they are same as FileDataList[FileDataID] */
+    /* they are same as *DataList[DataID] */
     /* they are here for performance reasons */
     const uint8_t *s;
     const uint8_t *i;
@@ -95,7 +98,7 @@ struct pile_t{
   ExpandTrace_t ExpandTrace;
 
   bool &GetPragmaOnce(){
-    return FileDataList[CurrentExpand.FileDataID].pragma_once;
+    return FileDataList[CurrentExpand.DataID].pragma_once;
   }
 
   void print_ExpandTrace(){
@@ -106,21 +109,28 @@ struct pile_t{
     uintptr_t rpsize = rp->size();
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
-      auto &f = FileDataList[et.FileDataID];
-      print(
-        "%.*s%.*s:%u\n",
-        rpsize,
-        rp->c_str(),
-        (uintptr_t)f.FileName.size(),
-        f.FileName.data(),
-        (uintptr_t)et.i - (uintptr_t)f.p
-      );
-      if(et.Relative){
-        rpsize -= et.PathSize;
+      if(et.DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
+        uintptr_t FileDataID = et.DataID ^ (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
+
+        auto &f = FileDataList[FileDataID];
+        print(
+          "%.*s%.*s:%u\n",
+          rpsize,
+          rp->c_str(),
+          (uintptr_t)f.FileName.size(),
+          f.FileName.data(),
+          (uintptr_t)et.i - (uintptr_t)f.p
+        );
+        if(et.Relative){
+          rpsize -= et.PathSize;
+        }
+        else{
+          rp--;
+          rpsize = rp->size();
+        }
       }
       else{
-        rp--;
-        rpsize = rp->size();
+        __abort();
       }
     }
   }
@@ -146,33 +156,35 @@ struct pile_t{
     "/usr/local/include/"
   };
 
-  void _ExpandTraceSet(
+  void _ExpandTraceFileSet(
+    uintptr_t FileDataID,
     bool Relative,
-    uintptr_t PathSize,
-    uintptr_t FileDataID
+    uintptr_t PathSize
   ){
+    CurrentExpand.DataID = FileDataID;
+    CurrentExpand.DataID |= (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
+
     CurrentExpand.Relative = Relative;
     CurrentExpand.PathSize = PathSize;
-    CurrentExpand.FileDataID = FileDataID;
 
     auto &fd = FileDataList[FileDataID];
     CurrentExpand.s = &fd.p[fd.s];
     CurrentExpand.i = fd.p;
   }
 
-  void ExpandTraceAdd(
+  void ExpandTraceFileAdd(
+    uintptr_t FileDataID,
     bool Relative,
-    uintptr_t PathSize,
-    uintptr_t FileDataID
+    uintptr_t PathSize
   ){
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
 
     ExpandTrace.inc();
 
-    _ExpandTraceSet(
+    _ExpandTraceFileSet(
+      FileDataID,
       Relative,
-      PathSize,
-      FileDataID
+      PathSize
     );
   }
 
@@ -273,7 +285,7 @@ struct pile_t{
       FileDataID = it->second;
     }
 
-    ExpandTraceAdd(Relative, 0, FileDataID);
+    ExpandTraceFileAdd(FileDataID, Relative, 0);
   }
   void DeexpandFile(){
     if(CurrentExpand.Relative){
@@ -407,7 +419,7 @@ int main(int argc, const char **argv){
     .s = 6,
     .p = (uint8_t *)"\n#eof\n"
   };
-  pile._ExpandTraceSet(true, 0, 0);
+  pile._ExpandTraceFileSet(0, true, 0);
   pile.ExpandTrace.inc();
 
   pile.RelativePaths.push_back({});
