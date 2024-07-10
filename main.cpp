@@ -33,16 +33,23 @@ struct pile_t{
 
   std::string filename;
 
-  struct RawData_t{
-    bool pragma_once = false;
-
-    uintptr_t s;
-    uint8_t *p;
-
+  #define BLL_set_prefix FileDataList
+  #define BLL_set_Link 0
+  #define BLL_set_Recycle 0
+  #define BLL_set_IntegerNR 1
+  #define BLL_set_CPP_ConstructDestruct 1
+  #define BLL_set_CPP_Node_ConstructDestruct 1
+  #define BLL_set_CPP_CopyAtPointerChange 1
+  #define BLL_set_AreWeInsideStruct 1
+  #define BLL_set_NodeData \
+    bool pragma_once = false; \
+    uintptr_t s; \
+    uint8_t *p; \
     std::string FileName;
-  };
-  std::vector<RawData_t> FileDataVector;
-  std::map<std::string, uintptr_t> FileDataMap; /* points FileDataVector */
+  #define BLL_set_type_node uintptr_t
+  #include <BLL/BLL.h>
+  FileDataList_t FileDataList;
+  std::map<std::string, uintptr_t> FileDataMap; /* points FileDataList */
 
   std::vector<std::string> RelativePaths;
 
@@ -67,14 +74,12 @@ struct pile_t{
 
     uintptr_t PathSize;
 
-    uintptr_t FileDataVectorID;
+    uintptr_t FileDataID;
 
-    /* they are same as FileDataVector[FileDataVectorID] */
+    /* they are same as FileDataList[FileDataID] */
     /* they are here for performance reasons */
     const uint8_t *s;
     const uint8_t *i;
-
-    uintptr_t LineIndex;
   };
   expandtrace_data_t CurrentExpand;
   #define BLL_set_prefix ExpandTrace
@@ -90,7 +95,7 @@ struct pile_t{
   ExpandTrace_t ExpandTrace;
 
   bool &GetPragmaOnce(){
-    return FileDataVector[CurrentExpand.FileDataVectorID].pragma_once;
+    return FileDataList[CurrentExpand.FileDataID].pragma_once;
   }
 
   void print_ExpandTrace(){
@@ -101,7 +106,7 @@ struct pile_t{
     uintptr_t rpsize = rp->size();
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
-      auto &f = FileDataVector[et.FileDataVectorID];
+      auto &f = FileDataList[et.FileDataID];
       print(
         "%.*s%.*s:%u\n",
         rpsize,
@@ -144,23 +149,21 @@ struct pile_t{
   void _ExpandTraceSet(
     bool Relative,
     uintptr_t PathSize,
-    uintptr_t FileDataVectorID
+    uintptr_t FileDataID
   ){
     CurrentExpand.Relative = Relative;
     CurrentExpand.PathSize = PathSize;
-    CurrentExpand.FileDataVectorID = FileDataVectorID;
+    CurrentExpand.FileDataID = FileDataID;
 
-    auto &fd = FileDataVector[FileDataVectorID];
+    auto &fd = FileDataList[FileDataID];
     CurrentExpand.s = &fd.p[fd.s];
     CurrentExpand.i = fd.p;
-
-    CurrentExpand.LineIndex = 0;
   }
 
   void ExpandTraceAdd(
     bool Relative,
     uintptr_t PathSize,
-    uintptr_t FileDataVectorID
+    uintptr_t FileDataID
   ){
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
 
@@ -169,7 +172,7 @@ struct pile_t{
     _ExpandTraceSet(
       Relative,
       PathSize,
-      FileDataVectorID
+      FileDataID
     );
   }
 
@@ -208,7 +211,7 @@ struct pile_t{
 
     std::string abspath = RelativePaths.back() + FileName;
 
-    uintptr_t FileDataVectorID;
+    uintptr_t FileDataID;
 
     auto it = FileDataMap.find(abspath);
     if(it == FileDataMap.end()){
@@ -257,24 +260,20 @@ struct pile_t{
       }
       p = (uint8_t *)realloc(p, p_size);
 
-      FileDataVector.push_back({
+      FileDataList[FileDataList.NewNode()] = {
         .s = p_size,
         .p = p,
         .FileName = FileName
-      });
-      FileDataVectorID = FileDataVector.size() - 1;
+      };
+      FileDataID = FileDataList.Usage() - 1;
 
-      FileDataMap[abspath] = FileDataVectorID;
+      FileDataMap[abspath] = FileDataID;
     }
     else{
-      #if 0 // i hate cpp
-      FileDataVectorID = FileDataMap[it];
-      #else
-      FileDataVectorID = FileDataMap[abspath];
-      #endif
+      FileDataID = it->second;
     }
 
-    ExpandTraceAdd(Relative, 0, FileDataVectorID);
+    ExpandTraceAdd(Relative, 0, FileDataID);
   }
   void DeexpandFile(){
     if(CurrentExpand.Relative){
@@ -404,10 +403,10 @@ int main(int argc, const char **argv){
     return 0;
   }
 
-  pile.FileDataVector.push_back({
+  pile.FileDataList[pile.FileDataList.NewNode()] = {
     .s = 6,
     .p = (uint8_t *)"\n#eof\n"
-  });
+  };
   pile._ExpandTraceSet(true, 0, 0);
   pile.ExpandTrace.inc();
 
