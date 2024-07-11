@@ -17,6 +17,7 @@ void SkipEmptyInLine(){
 }
 
 /* beautifully just means no spaces in begin and end */
+/* TOOOD this function looks like mess. but can someone code faster than this? */
 void ReadLineBeautifully(const uint8_t **p, const uint8_t **s){
   SkipEmptyInLine();
   *p = &gc();
@@ -84,7 +85,15 @@ enum class PreprocessorParseType : uint8_t{
   oplogor
 };
 PreprocessorParseType IdentifyPreprocessorParse(){
+  gt_begin:;
+
   if(gc() == '\n'){
+    if(IsLastExpandDefine()){
+      _DeexpandDefine();
+      _Deexpand();
+      SkipEmptyInLine();
+      goto gt_begin;
+    }
     ic();
     return PreprocessorParseType::endline;
   }
@@ -187,7 +196,7 @@ PreprocessorParseType IdentifyPreprocessorParse(){
     return PreprocessorParseType::opbior;
   }
   else{
-    printwi("cant identify preprocessor parse %c", gc());
+    printwi("cant identify preprocessor parse %lx %c", gc(), gc());
     __abort();
   }
 
@@ -262,8 +271,11 @@ IncludePath_t GetIncludePath(){
   return r;
 }
 
-void GetDefineParams(std::vector<std::string_view> &Inputs, bool &va_args){
-  std::string in;
+void GetDefineParams(std::map<std::string_view, uintptr_t> &Inputs, bool &va_args){
+  /* TOOD do this function without storing string variable */
+
+  uintptr_t incount = 0;
+  std::string_view in;
   while(1){
     SkipEmptyInLine();
     if(gc() == ')'){
@@ -274,7 +286,7 @@ void GetDefineParams(std::vector<std::string_view> &Inputs, bool &va_args){
       if(!in.size()){
         errprint_exit("zero length define parameter name");
       }
-      Inputs.push_back(in);
+      Inputs[in] = incount++;
       in = {};
       ic_unsafe();
     }
@@ -301,7 +313,7 @@ void GetDefineParams(std::vector<std::string_view> &Inputs, bool &va_args){
     }
   }
   if(in.size()){
-    Inputs.push_back(in);
+    Inputs[in] = incount;
   }
 }
 
@@ -380,6 +392,8 @@ uint8_t SkipToNextPreprocessorScopeExit(){
 }
 
 sint64_t GetPreprocessorNumber(){
+  /* TOOD this function most likely doesnt work well for last bits */
+
   sint64_t tv = 0;
   do{
     tv += gc() - '0';
@@ -607,11 +621,11 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
           break;
         }
         case ops::eq:{
-          __abort();
+          rv = glv() == rv;
           break;
         }
         case ops::ne:{
-          __abort();
+          rv = glv() != rv;
           break;
         }
         case ops::biand:{
@@ -676,7 +690,7 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
         stack += sizeof(sint64_t);
 
         LastStackIsVariable = true;
-        
+
         break;
       }
       case PreprocessorParseType::Identifier:{
@@ -705,8 +719,8 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
           LastStackIsVariable = true;
         }
         else{
-          auto d = DefineDataMap.find(iden);
-          if(d == DefineDataMap.end()){
+          auto ddmid = DefineDataMap.find(iden);
+          if(ddmid == DefineDataMap.end()){
             if(settings.Wmacro_not_defined){
               printwi("warning, Wmacro-not-defined %.*s",
                 (uintptr_t)iden.size(), iden.data()
@@ -719,7 +733,13 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
             LastStackIsVariable = true;
           }
           else{
-            __abort();
+            auto &dd = DefineDataList[ddmid->second];
+            if(dd.isfunc){
+              __abort();
+            }
+            else{
+              ExpandTraceDefineAdd(ddmid->second);
+            }
           }
         }
         break;
@@ -982,7 +1002,13 @@ bool Compile(){
           __abort();
         }
 
-        ReadLineBeautifully(&d.op, &d.os);
+        SkipEmptyInLine();
+        d.op = &gc();
+        while(gc() != '\n'){
+          ic_unsafe();
+        }
+        d.os = &gc();
+        ic();
 
         DefineDataMap[defiden] = ddid;
       }

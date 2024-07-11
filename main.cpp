@@ -63,7 +63,7 @@ struct pile_t{
   #define BLL_set_AreWeInsideStruct 1
   #define BLL_set_NodeData \
     bool isfunc; \
-    std::vector<std::string_view> Inputs; \
+    std::map<std::string_view, uintptr_t> Inputs; \
     bool va_args; \
     const uint8_t *op; /* output pointer */ \
     const uint8_t *os; /* output size */
@@ -87,15 +87,36 @@ struct pile_t{
   };
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
+  struct DefineParameterStack_t{
+    std::string_view *i;
+
+    DefineParameterStack_t(){
+      /* TOOD use mmap and reserve after pointer */
+      /* so we can get crash for sure instead of corruption */
+
+      /* 0x1000 define parameters */
+      i = (std::string_view *)A_resize(NULL, 0x1000 * sizeof(std::string_view));
+    }
+    ~DefineParameterStack_t(){
+      A_resize(i, 0);
+    }
+  }DefineParameterStack;
+
   struct expandtrace_data_t{
     /* we do little bit trick here */
     /* DataID can point file or define so */
     /* so if it has biggest bit set, it means file. if not, its define. */
     uintptr_t DataID;
 
-    /* they are only used if data is file */
-    bool Relative;
-    uintptr_t PathSize;
+    union{
+      struct{
+        bool Relative;
+        uintptr_t PathSize;
+      }file;
+      struct{
+        std::string_view *pstack;
+      }define;
+    };
 
     /* they are same as *DataList[DataID] */
     /* they are here for performance reasons */
@@ -139,8 +160,8 @@ struct pile_t{
           f.FileName.data(),
           (uintptr_t)et.i - (uintptr_t)f.p
         );
-        if(et.Relative){
-          rpsize -= et.PathSize;
+        if(et.file.Relative){
+          rpsize -= et.file.PathSize;
         }
         else{
           rp--;
@@ -182,8 +203,8 @@ struct pile_t{
     CurrentExpand.DataID = FileDataID;
     CurrentExpand.DataID |= (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
 
-    CurrentExpand.Relative = Relative;
-    CurrentExpand.PathSize = PathSize;
+    CurrentExpand.file.Relative = Relative;
+    CurrentExpand.file.PathSize = PathSize;
 
     auto &fd = FileDataList[FileDataID];
     CurrentExpand.s = &fd.p[fd.s];
@@ -319,24 +340,37 @@ struct pile_t{
   }
 
   void _DeexpandFile(){
-    if(CurrentExpand.Relative){
+    if(CurrentExpand.file.Relative){
       auto &rp = RelativePaths.back();
-      rp = rp.substr(0, rp.size() - CurrentExpand.PathSize);
+      rp = rp.substr(0, rp.size() - CurrentExpand.file.PathSize);
     }
-    else if(!CurrentExpand.Relative){
+    else{
       RelativePaths.pop_back();
     }
   }
+  void _DeexpandDefine(){
+    auto &dd = DefineDataList[CurrentExpand.DataID];
+    DefineParameterStack.i -= dd.Inputs.size();
+  }
+
   void _Deexpand(){
     ExpandTrace.dec();
     CurrentExpand = ExpandTrace[ExpandTrace.Usage() - 1];
   }
+
+  bool IsLastExpandFile(){
+    return !!(CurrentExpand.DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1);
+  }
+  bool IsLastExpandDefine(){
+    return !IsLastExpandFile();
+  }
+
   void Deexpand(){
-    if(CurrentExpand.DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
+    if(IsLastExpandFile()){
       _DeexpandFile();
     }
     else{
-      __abort();
+      _DeexpandDefine();
     }
 
     _Deexpand();
