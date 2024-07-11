@@ -392,20 +392,11 @@ uint8_t SkipToNextPreprocessorScopeExit(){
 }
 
 sint64_t GetPreprocessorNumber(){
-  /* TOOD this function most likely doesnt work well for last bits */
-
-  sint64_t tv = 0;
+  sint64_t v = 0;
   do{
-    tv += gc() - '0';
-    tv *= 10;
+    v = v * 10 + gc() - '0';
     ic_unsafe();
   }while(STR_ischar_digit(gc()));
-
-  sint64_t v = 0;
-  while(tv){
-    tv /= 10;
-    v += tv % 10;
-  }
 
   uintptr_t literal_u = 0;
   uintptr_t literal_l = 0;
@@ -442,7 +433,7 @@ sint64_t GetPreprocessorNumber(){
   return v;
 }
 
-sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
+void _ParsePreprocessorToCondition(uint8_t *stack){
   auto StackStart = stack;
 
   /*
@@ -543,8 +534,8 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
 
   auto Process = [&]() -> void {
     auto glv = [&]() -> sint64_t {
-      auto ret = *(sint64_t *)stack;
       stack -= sizeof(sint64_t);
+      auto ret = *(sint64_t *)stack;
       return ret;
     };
 
@@ -553,8 +544,8 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
       __abort();
     }
 
-    auto rv = *(sint64_t *)stack;
     stack -= sizeof(sint64_t);
+    auto rv = *(sint64_t *)stack;
 
     while(stack != StackStart){
       ops op = (ops)*--stack;
@@ -856,13 +847,12 @@ sint64_t _ParsePreprocessorToCondition(uint8_t *stack){
   gt_end:
 
   Process();
-
-  return *(sint64_t *)stack;
 }
 
 bool ParsePreprocessorToCondition(){
   uint8_t stack[0x1000];
-  return !!_ParsePreprocessorToCondition(stack);
+  _ParsePreprocessorToCondition(stack);
+  return !!*(sint64_t *)stack;
 }
 
 bool GetPreprocessorCondition(uint8_t ConditionType){
@@ -982,7 +972,7 @@ bool Compile(){
         auto dmid = DefineDataMap.find(defiden);
         if(dmid != DefineDataMap.end()){
           if(settings.Wmacro_redefined){
-            printwi("macro is redefined");
+            printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
           }
           DefineDataMap.erase(defiden);
         }
