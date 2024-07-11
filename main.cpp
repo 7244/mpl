@@ -63,9 +63,10 @@ struct pile_t{
   #define BLL_set_AreWeInsideStruct 1
   #define BLL_set_NodeData \
     bool isfunc; \
-    std::vector<std::string> Inputs; \
+    std::vector<std::string_view> Inputs; \
     bool va_args; \
-    std::string Output;
+    const uint8_t *op; /* output pointer */ \
+    const uint8_t *os; /* output size */
   #define BLL_set_type_node uintptr_t
   #include <BLL/BLL.h>
   DefineDataList_t DefineDataList;
@@ -82,7 +83,7 @@ struct pile_t{
     /* 0 #if, 1 #elif, 2 #else */
     uint8_t Type = 0;
 
-    bool DidRan = 0;
+    bool DidRan = false;
   };
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
@@ -304,6 +305,19 @@ struct pile_t{
 
     ExpandTraceFileAdd(FileDataID, Relative, 0);
   }
+
+  void ExpandTraceDefineAdd(uintptr_t DefineDataID){
+    ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
+
+    ExpandTrace.inc();
+
+    CurrentExpand.DataID = DefineDataID;
+
+    auto &dd = DefineDataList[DefineDataID];
+    CurrentExpand.s = dd.os;
+    CurrentExpand.i = dd.op;
+  }
+
   void _DeexpandFile(){
     if(CurrentExpand.Relative){
       auto &rp = RelativePaths.back();

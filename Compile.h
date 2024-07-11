@@ -1,14 +1,14 @@
-/* tab or space */
-bool ischar_ts(const uint8_t &c){
+bool ischar_empty(const uint8_t &c){
+  /* TOOD tab may be never there with simplyfile1 */
   return c == ' ' || c == '\t';
 }
-bool ischar_ts(){
-  return ischar_ts(gc());
+bool ischar_empty(){
+  return ischar_empty(gc());
 }
 
 void SkipEmptyInLine(){
   while(1){
-    if(!ischar_ts()){
+    if(!ischar_empty()){
       break;
     }
 
@@ -16,31 +16,25 @@ void SkipEmptyInLine(){
   }
 }
 
-/* beauty string is just string that doesnt have spaces in begin and end */
-/* can be used as side effect without using return value */
-std::string ReadLineAsBeautyString(){
-  std::string r;
-
+/* beautifully just means no spaces in begin and end */
+void ReadLineBeautifully(const uint8_t **p, const uint8_t **s){
   SkipEmptyInLine();
-
+  *p = &gc();
+  *s = &gc();
   while(gc() != '\n'){
-    r += gc();
-    ic();
-  }
-
-  ic();
-
-  auto l = r.size();
-  while(l--){
-    if(!ischar_ts(r[l])){
-      break;
+    while(!ischar_empty()){
+      if(gc() == '\n'){
+        *s = &gc();
+        ic();
+        return;
+      }
+      ic_unsafe();
     }
-    r.pop_back();
+    *s = &gc();
+    SkipEmptyInLine();
   }
-
-  return r;
+  ic();
 }
-
 
 enum class WordType : uint8_t{
   PreprocessorStart,
@@ -268,12 +262,12 @@ IncludePath_t GetIncludePath(){
   return r;
 }
 
-void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
+void GetDefineParams(std::vector<std::string_view> &Inputs, bool &va_args){
   std::string in;
   while(1){
     SkipEmptyInLine();
     if(gc() == ')'){
-      ic();
+      ic_unsafe();
       break;
     }
     else if(gc() == ','){
@@ -282,26 +276,24 @@ void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
       }
       Inputs.push_back(in);
       in = {};
-      ic();
+      ic_unsafe();
     }
     else if(gc() == '.'){
-      ic();
+      ic_unsafe();
       if(gc() != '.'){
         errprint_exit("expected ...");
       }
-      ic();
+      ic_unsafe();
       if(gc() != '.'){
         errprint_exit("expected ...");
       }
-      ic();
+      ic_unsafe();
       va_args = true;
-      while(ischar_ts()){
-        ic();
-      }
+      SkipEmptyInLine();
       if(gc() != ')'){
         errprint_exit("expected ) after ...");
       }
-      ic();
+      ic_unsafe();
       break;
     }
     else{
@@ -314,20 +306,13 @@ void GetDefineParams(std::vector<std::string> &Inputs, bool &va_args){
 }
 
 void SkipCurrentEmptyLine(){
-  while(1){
-    if(ischar_ts()){
-      
+  while(gc() != '\n'){
+    if(EXPECT(!ischar_empty(), false)){
+      errprint_exit("this line supposed to be empty after something");
     }
-    else if(gc() == '\n'){
-      ic();
-      break;
-    }
-    else{
-      printwi("this line supposed to be empty after something");
-      __abort();
-    }
-    ic();
+    ic_unsafe();
   }
+  ic();
 }
 
 void SkipCurrentLine(){
@@ -938,12 +923,16 @@ bool Compile(){
         return 0;
       }
       else if(!Identifier.compare("error")){
-        auto str = ReadLineAsBeautyString();
-        errprint_exit("#error %s", str.c_str());
+        const uint8_t *p;
+        const uint8_t *s;
+        ReadLineBeautifully(&p, &s);
+        errprint_exit("#error %.*s", (uintptr_t)s - (uintptr_t)p, p);
       }
       else if(!Identifier.compare("warning")){
-        auto str = ReadLineAsBeautyString();
-        printwi("#warning %s", str.c_str());
+        const uint8_t *p;
+        const uint8_t *s;
+        ReadLineBeautifully(&p, &s);
+        printwi("#warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
       }
       else if(!Identifier.compare("include")){
         SkipEmptyInLine();
@@ -985,7 +974,7 @@ bool Compile(){
           ic();
           GetDefineParams(d.Inputs, d.va_args);
         }
-        else if(ischar_ts()){
+        else if(ischar_empty()){
           d.isfunc = false;
           ic();
         }
@@ -993,7 +982,7 @@ bool Compile(){
           __abort();
         }
 
-        d.Output = ReadLineAsBeautyString();
+        ReadLineBeautifully(&d.op, &d.os);
 
         DefineDataMap[defiden] = ddid;
       }
