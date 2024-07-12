@@ -82,7 +82,8 @@ enum class PreprocessorParseType : uint8_t{
   opbixor,
   opbior,
   oplogand,
-  oplogor
+  oplogor,
+  opternary
 };
 PreprocessorParseType IdentifyPreprocessorParse(){
   gt_begin:;
@@ -194,6 +195,10 @@ PreprocessorParseType IdentifyPreprocessorParse(){
       return PreprocessorParseType::oplogor;
     }
     return PreprocessorParseType::opbior;
+  }
+  else if(gc() == '?'){
+    ic_unsafe();
+    return PreprocessorParseType::opternary;
   }
   else{
     printwi("cant identify preprocessor parse %lx %c", gc(), gc());
@@ -433,6 +438,56 @@ sint64_t GetPreprocessorNumber(){
   return v;
 }
 
+void ExpandPreprocessorIdentifier(){
+  auto iden = GetIdentifier();
+  if(!iden.compare("defined")){
+    std::string_view defiden;
+
+    SkipEmptyInLine();
+    if(gc() == '('){
+      ic_unsafe();
+      SkipEmptyInLine();
+      defiden = GetIdentifier();
+      SkipEmptyInLine();
+      if(gc() != ')'){
+        errprint_exit("expected ) for defined");
+      }
+      ic_unsafe();
+    }
+    else{
+      defiden = GetIdentifier();
+    }
+
+    *DefineStack.i++ = '0' + (DefineDataMap.find(defiden) != DefineDataMap.end());
+    *DefineStack.i++ = '\n';
+    _ExpandTraceDefineAdd(DefineStack.i - 2, 2);
+  }
+  else{
+    auto ddmid = DefineDataMap.find(iden);
+    if(ddmid == DefineDataMap.end()){
+      if(settings.Wmacro_not_defined){
+        printwi("warning, Wmacro-not-defined %.*s",
+          (uintptr_t)iden.size(), iden.data()
+        );
+      }
+
+      *DefineStack.i++ = '0';
+      *DefineStack.i++ = '\n';
+      _ExpandTraceDefineAdd(DefineStack.i - 2, 2);
+    }
+    else{
+      auto &dd = DefineDataList[ddmid->second];
+      if(dd.isfunc){
+        printwi("good luck %.*s", iden.size(), iden.data());
+        __abort();
+      }
+      else{
+        ExpandTraceDefineAdd(ddmid->second);
+      }
+    }
+  }
+}
+
 void _ParsePreprocessorToCondition(uint8_t *stack){
   auto StackStart = stack;
 
@@ -449,7 +504,8 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
     8 |
     9 &&
     10 ||
-    11 reserved. used for initial priority
+    11 ternary
+    12 reserved. used for initial priority
   */
 
   enum class ops : uint8_t{
@@ -484,7 +540,9 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
 
     logand,
 
-    logor
+    logor,
+
+    ternary
   };
 
   /* get priority */
@@ -523,12 +581,14 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
         return 9;
       case ops::logor:
         return 10;
+      case ops::ternary:
+        return 11;
     }
     __unreachable();
   };
 
   /* last priority */
-  uint8_t lp = 11;
+  uint8_t lp = 12;
 
   bool LastStackIsVariable = false;
 
@@ -639,6 +699,9 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
           rv = glv() || rv;
           break;
         }
+        case ops::ternary:{
+          __unreachable();
+        }
       }
     }
 
@@ -685,54 +748,7 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
         break;
       }
       case PreprocessorParseType::Identifier:{
-        auto iden = GetIdentifier();
-        if(!iden.compare("defined")){
-          std::string_view defiden;
-
-          SkipEmptyInLine();
-          if(gc() == '('){
-            ic_unsafe();
-            SkipEmptyInLine();
-            defiden = GetIdentifier();
-            SkipEmptyInLine();
-            if(gc() != ')'){
-              printwi("expected ) for defined");
-            }
-            ic_unsafe();
-          }
-          else{
-            defiden = GetIdentifier();
-          }
-
-          *(sint64_t *)stack = DefineDataMap.find(defiden) != DefineDataMap.end();
-          stack += sizeof(sint64_t);
-
-          LastStackIsVariable = true;
-        }
-        else{
-          auto ddmid = DefineDataMap.find(iden);
-          if(ddmid == DefineDataMap.end()){
-            if(settings.Wmacro_not_defined){
-              printwi("warning, Wmacro-not-defined %.*s",
-                (uintptr_t)iden.size(), iden.data()
-              );
-            }
-
-            *(sint64_t *)stack = 0;
-            stack += sizeof(sint64_t);
-
-            LastStackIsVariable = true;
-          }
-          else{
-            auto &dd = DefineDataList[ddmid->second];
-            if(dd.isfunc){
-              __abort();
-            }
-            else{
-              ExpandTraceDefineAdd(ddmid->second);
-            }
-          }
-        }
+        ExpandPreprocessorIdentifier();
         break;
       }
       case PreprocessorParseType::oplognot:{
@@ -839,6 +855,34 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
       case PreprocessorParseType::oplogor:{
         if(!LastStackIsVariable){ __abort(); }
         AddOP(ops::logor);
+        break;
+      }
+      case PreprocessorParseType::opternary:{
+        Process();
+        stack -= sizeof(sint64_t);
+        sint64_t v = *(sint64_t *)stack;
+        if(v){
+          __abort();
+        }
+        else{ /* need go to colon */
+          while(1){
+            if(gc() == '\n'){
+              if(EXPECT(!IsLastExpandDefine(), false)){
+                errprint_exit("ternary operator failed to find :");
+              }
+              _DeexpandDefine();
+              _Deexpand();
+            }
+            else if(STR_ischar_char(gc()) || gc() == '_'){
+              ExpandPreprocessorIdentifier();
+            }
+            else if(gc() == ':'){
+              ic_unsafe();
+              break;
+            }
+            ic_unsafe();
+          }
+        }
         break;
       }
     }

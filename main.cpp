@@ -87,20 +87,19 @@ struct pile_t{
   };
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
-  struct DefineParameterStack_t{
-    std::string_view *i;
+  struct DefineStack_t{
+    uint8_t *i;
 
-    DefineParameterStack_t(){
+    DefineStack_t(){
       /* TOOD use mmap and reserve after pointer */
       /* so we can get crash for sure instead of corruption */
 
-      /* 0x1000 define parameters */
-      i = (std::string_view *)A_resize(NULL, 0x1000 * sizeof(std::string_view));
+      i = (uint8_t *)A_resize(NULL, 0x4000);
     }
-    ~DefineParameterStack_t(){
+    ~DefineStack_t(){
       A_resize(i, 0);
     }
-  }DefineParameterStack;
+  }DefineStack;
 
   struct expandtrace_data_t{
     /* we do little bit trick here */
@@ -114,7 +113,7 @@ struct pile_t{
         uintptr_t PathSize;
       }file;
       struct{
-        std::string_view *pstack;
+        uint8_t *stack;
       }define;
     };
 
@@ -327,16 +326,23 @@ struct pile_t{
     ExpandTraceFileAdd(FileDataID, Relative, 0);
   }
 
-  void ExpandTraceDefineAdd(uintptr_t DefineDataID){
+  void _ExpandTraceDefineAdd(const uint8_t *i, uintptr_t size){
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
 
     ExpandTrace.inc();
 
-    CurrentExpand.DataID = DefineDataID;
+    CurrentExpand.DataID = 0;
 
+    *(uintptr_t *)&CurrentExpand.s = size;
+    CurrentExpand.i = i;
+  }
+  void ExpandTraceDefineAdd(uintptr_t DefineDataID){
     auto &dd = DefineDataList[DefineDataID];
-    CurrentExpand.s = dd.os;
-    CurrentExpand.i = dd.op;
+    _ExpandTraceDefineAdd(dd.op, 0);
+  }
+  void ExpandTraceDefineFunctionAdd(uintptr_t DefineDataID){
+    auto &dd = DefineDataList[DefineDataID];
+    _ExpandTraceDefineAdd(dd.op, dd.Inputs.size() * sizeof(std::string_view));
   }
 
   void _DeexpandFile(){
@@ -349,8 +355,7 @@ struct pile_t{
     }
   }
   void _DeexpandDefine(){
-    auto &dd = DefineDataList[CurrentExpand.DataID];
-    DefineParameterStack.i -= dd.Inputs.size();
+    DefineStack.i -= *(uintptr_t *)&CurrentExpand.s;
   }
 
   void _Deexpand(){
