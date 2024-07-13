@@ -212,8 +212,7 @@ uintptr_t _GetIdentifier(){
   uintptr_t r = 1;
 
   if(EXPECT(!STR_ischar_char(gc()) && gc() != '_', false)){
-    printwi("Identifier starts with not character.");
-    __abort();
+    errprint_exit("Identifier starts with not character %lx %c", gc(), gc());
   }
 
   ic_unsafe();
@@ -277,6 +276,8 @@ IncludePath_t GetIncludePath(){
 
 void GetDefineParams(std::map<std::string_view, uintptr_t> &Inputs, bool &va_args){
   /* TOOD do this function without storing string variable */
+
+  va_args = false;
 
   uintptr_t incount = 0;
   std::string_view in;
@@ -438,67 +439,110 @@ sint64_t GetPreprocessorNumber(){
 }
 
 void ExpandPreprocessorIdentifier(){
+  auto SeekConcatenation = [&]() -> bool {
+    SkipEmptyInLine();
+    if(gc() == '#'){
+      if((&gc())[1] == '#'){
+        return true;
+      }
+    }
+    return false;
+  };
+
   auto iden = GetIdentifier();
 
-  if(!iden.compare("defined")){
-    std::string_view defiden;
+  if(!IsLastExpandDefine()){
+    if(!iden.compare("defined")){
+      std::string_view defiden;
 
-    SkipEmptyInLine();
-    if(gc() == '('){
-      ic_unsafe();
       SkipEmptyInLine();
-      defiden = GetIdentifier();
-      SkipEmptyInLine();
-      if(gc() != ')'){
-        errprint_exit("expected ) for defined");
+      if(gc() == '('){
+        ic_unsafe();
+        SkipEmptyInLine();
+        defiden = GetIdentifier();
+        SkipEmptyInLine();
+        if(gc() != ')'){
+          errprint_exit("expected ) for defined");
+        }
+        ic_unsafe();
       }
-      ic_unsafe();
-    }
-    else{
-      defiden = GetIdentifier();
-    }
-
-    *DefineStack.i++ = '0' + (DefineDataMap.find(defiden) != DefineDataMap.end());
-    *DefineStack.i++ = '\n';
-    _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
-
-    return;
-  }
-
-  uintptr_t ddid;
-
-  if(IsLastExpandDefine()){
-    /* TOOOD checking data id if 0 or not can be faster */
-
-    auto &m = DefineDataList[CurrentExpand.DataID].Inputs;
-    auto mid = m.find(iden);
-    if(mid == m.end()){
-      goto gt_notfound;
-    }
-
-    ddid = mid->second;
-  }
-  else{
-    gt_notfound:
-
-    auto ddmid = DefineDataMap.find(iden);
-
-    if(ddmid == DefineDataMap.end()){
-      if(settings.Wmacro_not_defined){
-        printwi("warning, Wmacro-not-defined %.*s",
-          (uintptr_t)iden.size(), iden.data()
-        );
+      else{
+        defiden = GetIdentifier();
       }
 
-      *DefineStack.i++ = '0';
+      *DefineStack.i++ = '0' + (DefineDataMap.find(defiden) != DefineDataMap.end());
       *DefineStack.i++ = '\n';
       _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
 
       return;
     }
-
-    ddid = ddmid->second;
   }
+  else{
+    /* TOOOD checking data id if 0 or not can be faster */
+
+    auto &m = DefineDataList[CurrentExpand.DataID].Inputs; /* map */
+
+    if(SeekConcatenation()){
+      auto StackStart = DefineStack.i;
+
+      while(1){
+        auto mid = m.find(iden);
+        if(mid != m.end()){
+          auto &param = ((std::string_view *)CurrentExpand.define.pstack)[mid->second];
+          __abort();
+        }
+        else{
+          __MemoryCopy(iden.data(), DefineStack.i, iden.size());
+          DefineStack.i += iden.size();
+        }
+        ic_unsafe(); /* second # */
+        ic_unsafe(); /* after concatenation */
+
+        SkipEmptyInLine();
+        auto iden = GetIdentifier();
+
+        if(!SeekConcatenation()){
+          break;
+        }
+      }
+      auto mid = m.find(iden);
+      if(mid != m.end()){
+        auto &param = ((std::string_view *)CurrentExpand.define.pstack)[mid->second];
+        __abort();
+      }
+      else{
+        __MemoryCopy(iden.data(), DefineStack.i, iden.size());
+        DefineStack.i += iden.size();
+      }
+
+      *DefineStack.i++ = '\n';
+
+      _ExpandTraceDefineAdd(0, StackStart, DefineStack.i - StackStart);
+    }
+    else{
+      auto mid = m.find(iden);
+      if(mid != m.end()){
+        auto &param = ((std::string_view *)CurrentExpand.define.pstack)[mid->second];
+        __abort();
+      }
+    }
+  }
+
+  auto ddmid = DefineDataMap.find(iden);
+  if(ddmid == DefineDataMap.end()){
+    if(settings.Wmacro_not_defined){
+      printwi("warning, Wmacro-not-defined %.*s",
+        (uintptr_t)iden.size(), iden.data()
+      );
+    }
+
+    *DefineStack.i++ = '0';
+    *DefineStack.i++ = '\n';
+    _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
+
+    return;
+  }
+  uintptr_t ddid = ddmid->second;
 
   auto &dd = DefineDataList[ddid];
 
@@ -746,7 +790,7 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
           break;
         }
         case ops::plus:{
-          __abort();
+          rv = glv() + rv;
           break;
         }
         case ops::minus:{

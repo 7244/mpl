@@ -1,3 +1,7 @@
+#ifndef set_WriteToFile
+  #define set_WriteToFile 1
+#endif
+
 #include <WITCH/WITCH.h>
 #include <WITCH/IO/IO.h>
 #include <WITCH/IO/print.h>
@@ -14,14 +18,16 @@
 #include <vector>
 #include <map>
 
-void print(const char *format, ...){
+void _print(sint32_t fd, const char *format, ...){
   IO_fd_t fd_stdout;
-  IO_fd_set(&fd_stdout, FD_ERR);
+  IO_fd_set(&fd_stdout, fd);
   va_list argv;
   va_start(argv, format);
   IO_vprint(&fd_stdout, format, argv);
   va_end(argv);
 }
+#define printstderr(...) _print(FD_ERR, ##__VA_ARGS__)
+#define printstdout(...) _print(FD_OUT, ##__VA_ARGS__)
 
 struct pile_t{
   struct{
@@ -153,7 +159,7 @@ struct pile_t{
         uintptr_t FileDataID = et.DataID ^ (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
 
         auto &f = FileDataList[FileDataID];
-        print(
+        printstderr(
           "%.*s%.*s:%u\n",
           rpsize,
           rp->c_str(),
@@ -171,34 +177,34 @@ struct pile_t{
       }
       else{
         if(et.DataID == 0){
-          print("inside stack or flat define\n");
+          printstderr("inside stack or flat define\n");
         }
         else{
           auto &dd = DefineDataList[et.DataID];
-          print("inside function define(");
+          printstderr("inside function define(");
           uintptr_t pi = 0;
           while(pi != dd.Inputs.size()){
             for(auto const &it : dd.Inputs){
               if(it.second == pi){
-                print("%.*s", (uintptr_t)it.first.size(), it.first.data());
+                printstderr("%.*s", (uintptr_t)it.first.size(), it.first.data());
                 pi++;
                 if(pi != dd.Inputs.size()){
-                  print(",");
+                  printstderr(",");
                 }
                 break;
               }
             }
           }
-          print(")\n");
+          printstderr(")\n");
         }
       }
     }
   }
   /* print with info */
   #define printwi(format, ...) \
-    print(format "\n", ##__VA_ARGS__); \
+    printstderr(format "\n", ##__VA_ARGS__); \
     print_ExpandTrace(); \
-    print("\n");
+    printstderr("\n");
   #define errprint_exit(...) \
     printwi(__VA_ARGS__) \
     PR_exit(1); \
@@ -410,9 +416,15 @@ struct pile_t{
   }
 
   void ic_unsafe(){
+    #if set_WriteToFile
+      printstdout("%c", *CurrentExpand.i);
+    #endif
     ++CurrentExpand.i;
   }
   void _ic(){
+    #if set_WriteToFile
+      printstdout("%c", *CurrentExpand.i);
+    #endif
     CurrentExpand.i++;
 
     while(CurrentExpand.i == CurrentExpand.s){
@@ -434,7 +446,7 @@ ProgramParameter_t ProgramParameters[] = {
   {
     "h",
     [](uint32_t argCount, const char **arg){
-      print("-h == prints this and exits program.\n");
+      printstderr("-h == prints this and exits program.\n");
       PR_exit(0);
     }
   },
@@ -485,7 +497,7 @@ void CallParameter(uint32_t ParameterAt, uint32_t iarg, const char **argv){
     }
   }
   if(is == ProgramParameterCount){
-    print("undefined parameter `%s`. -h for help\n", argv[ParameterAt]);
+    printstderr("undefined parameter `%s`. -h for help\n", argv[ParameterAt]);
     PR_exit(0);
   }
   ProgramParameters[is].func(iarg - ParameterAt - 1, &argv[ParameterAt + 1]);
@@ -504,7 +516,7 @@ int main(int argc, const char **argv){
       }
       else{
         if(ParameterAt == iarg){
-          print("parameter should have a -\n");
+          printstderr("parameter should have a -\n");
           return 0;
         }
       }
@@ -515,7 +527,7 @@ int main(int argc, const char **argv){
   }
 
   if(pile.filename.size() == 0){
-    print("need something to process\n");
+    printstderr("need something to process\n");
     return 0;
   }
 
