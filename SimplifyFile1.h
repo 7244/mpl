@@ -4,6 +4,8 @@ bool InsideQuote = false;
 /* dont make this bool. x86 assembly has small and fast `inc` instruction. */
 uintptr_t SpaceCombo = 0;
 
+uintptr_t LastEndLine = 0;
+
 uintptr_t tp_size = file_input_size - 1;
 for(uintptr_t i = 0; EXPECT(i < tp_size, true);){
   if(tp[i] == '\\' && tp[i + 1] == '\n'){
@@ -19,16 +21,22 @@ for(uintptr_t i = 0; EXPECT(i < tp_size, true);){
   }
   else if(tp[i] == '\n'){
     if(InsidePreprocessor){
-      if(SpaceCombo){
-        p[p_size++] = ' ';
-        SpaceCombo = 0;
-      }
       p[p_size++] = tp[i++];
+      LastEndLine = p_size;
+      InsidePreprocessor = false;
     }
     else{
       i++;
+      while(tp[i] == ' ' || tp[i] == '\t'){
+        i++;
+      }
+      InsidePreprocessor = tp[i] == '#';
+      if(InsidePreprocessor && LastEndLine != p_size){
+        p[p_size++] = '\n';
+        LastEndLine = p_size;
+      }
     }
-    InsidePreprocessor = false;
+    SpaceCombo = 0;
   }
   else if(tp[i] == '"' && !InsidePreprocessor){
     if(SpaceCombo){
