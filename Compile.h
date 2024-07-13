@@ -201,8 +201,7 @@ PreprocessorParseType IdentifyPreprocessorParse(){
     return PreprocessorParseType::opternary;
   }
   else{
-    printwi("cant identify preprocessor parse %lx %c", gc(), gc());
-    __abort();
+    errprint_exit("cant identify preprocessor parse %lx %c", gc(), gc());
   }
 
   __unreachable();
@@ -440,6 +439,7 @@ sint64_t GetPreprocessorNumber(){
 
 void ExpandPreprocessorIdentifier(){
   auto iden = GetIdentifier();
+
   if(!iden.compare("defined")){
     std::string_view defiden;
 
@@ -460,10 +460,29 @@ void ExpandPreprocessorIdentifier(){
 
     *DefineStack.i++ = '0' + (DefineDataMap.find(defiden) != DefineDataMap.end());
     *DefineStack.i++ = '\n';
-    _ExpandTraceDefineAdd(DefineStack.i - 2, 2);
+    _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
+
+    return;
+  }
+
+  uintptr_t ddid;
+
+  if(IsLastExpandDefine()){
+    /* TOOOD checking data id if 0 or not can be faster */
+
+    auto &m = DefineDataList[CurrentExpand.DataID].Inputs;
+    auto mid = m.find(iden);
+    if(mid == m.end()){
+      goto gt_notfound;
+    }
+
+    ddid = mid->second;
   }
   else{
+    gt_notfound:
+
     auto ddmid = DefineDataMap.find(iden);
+
     if(ddmid == DefineDataMap.end()){
       if(settings.Wmacro_not_defined){
         printwi("warning, Wmacro-not-defined %.*s",
@@ -473,19 +492,106 @@ void ExpandPreprocessorIdentifier(){
 
       *DefineStack.i++ = '0';
       *DefineStack.i++ = '\n';
-      _ExpandTraceDefineAdd(DefineStack.i - 2, 2);
+      _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
+
+      return;
+    }
+
+    ddid = ddmid->second;
+  }
+
+  auto &dd = DefineDataList[ddid];
+
+  if(!dd.isfunc){
+    ExpandTraceDefineAdd(ddid);
+    return;
+  }
+
+  SkipEmptyInLine();
+  if(gc() != '('){
+    /* function called without parenthese. need to give 0. */
+
+    if(settings.Wmacro_incorrect_call){
+      printwi("Wmacro_incorrect_call");
+    }
+
+    *DefineStack.i++ = '0';
+    *DefineStack.i++ = '\n';
+    _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
+
+    return;
+  }
+
+  if(dd.va_args){
+    __abort();
+  }
+
+  uintptr_t pc = 0; /* parameter count */
+  ic_unsafe();
+  while(1){
+    SkipEmptyInLine();
+    if(EXPECT(gc() == '\n', false)){
+      errprint_exit("endline came too early");
+    }
+    else if(gc() == ')'){
+      break;
+    }
+    else if(gc() == ','){
+      *(std::string_view *)DefineStack.i = std::string_view((const char *)&gc(), 0);
+      DefineStack.i += sizeof(std::string_view);
+      pc++;
+      __abort();
     }
     else{
-      auto &dd = DefineDataList[ddmid->second];
-      if(dd.isfunc){
-        printwi("good luck %.*s", iden.size(), iden.data());
-        __abort();
-      }
-      else{
-        ExpandTraceDefineAdd(ddmid->second);
+      auto lp = &gc();
+      uintptr_t ScopeIn = 0;
+      while(1){
+        if(EXPECT(gc() == '\n', false)){
+          errprint_exit("endline came too early");;
+        }
+        else if(gc() == '('){
+          ScopeIn++;
+        }
+        else if(gc() == ')'){
+          if(!ScopeIn){
+            *(std::string_view *)DefineStack.i = std::string_view(
+              (const char *)lp,
+              (uintptr_t)&gc() - (uintptr_t)lp
+            );
+            DefineStack.i += sizeof(std::string_view);
+            pc++;
+            goto gt_funcend;
+          }
+          ScopeIn--;
+        }
+        else if(gc() == ',' && !ScopeIn){
+          *(std::string_view *)DefineStack.i = std::string_view(
+            (const char *)lp,
+            (uintptr_t)&gc() - (uintptr_t)lp
+          );
+          DefineStack.i += sizeof(std::string_view);
+          pc++;
+          ic_unsafe();
+          break;
+        }
+        ic_unsafe();
       }
     }
   }
+
+  gt_funcend:;
+
+  if(EXPECT(dd.Inputs.size() - pc > 1, false)){
+    errprint_exit("expected %u parameters, got %u parameters.", dd.Inputs.size(), pc);
+  }
+
+  while(pc != dd.Inputs.size()){
+    *(std::string_view *)DefineStack.i = std::string_view((const char *)&gc(), 0);
+    DefineStack.i += sizeof(std::string_view);
+    pc++;
+  }
+
+  ExpandTraceDefineFunctionAdd(ddid);
 }
 
 void _ParsePreprocessorToCondition(uint8_t *stack){

@@ -29,6 +29,8 @@ struct pile_t{
 
     /* no any compiler gives error or warning about it. but i want. */
     bool Wmacro_not_defined = false;
+
+    bool Wmacro_incorrect_call = true;
   }settings;
 
   std::string filename;
@@ -113,7 +115,7 @@ struct pile_t{
         uintptr_t PathSize;
       }file;
       struct{
-        uint8_t *stack;
+        uint8_t *pstack;
       }define;
     };
 
@@ -168,7 +170,27 @@ struct pile_t{
         }
       }
       else{
-        __abort();
+        if(et.DataID == 0){
+          print("inside stack or flat define\n");
+        }
+        else{
+          auto &dd = DefineDataList[et.DataID];
+          print("inside function define(");
+          uintptr_t pi = 0;
+          while(pi != dd.Inputs.size()){
+            for(auto const &it : dd.Inputs){
+              if(it.second == pi){
+                print("%.*s", (uintptr_t)it.first.size(), it.first.data());
+                pi++;
+                if(pi != dd.Inputs.size()){
+                  print(",");
+                }
+                break;
+              }
+            }
+          }
+          print(")\n");
+        }
       }
     }
   }
@@ -326,23 +348,24 @@ struct pile_t{
     ExpandTraceFileAdd(FileDataID, Relative, 0);
   }
 
-  void _ExpandTraceDefineAdd(const uint8_t *i, uintptr_t size){
+  void _ExpandTraceDefineAdd(uintptr_t DataID, const uint8_t *i, uintptr_t size){
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
 
     ExpandTrace.inc();
 
-    CurrentExpand.DataID = 0;
+    CurrentExpand.DataID = DataID;
 
     *(uintptr_t *)&CurrentExpand.s = size;
     CurrentExpand.i = i;
   }
   void ExpandTraceDefineAdd(uintptr_t DefineDataID){
     auto &dd = DefineDataList[DefineDataID];
-    _ExpandTraceDefineAdd(dd.op, 0);
+    _ExpandTraceDefineAdd(0, dd.op, 0);
   }
   void ExpandTraceDefineFunctionAdd(uintptr_t DefineDataID){
     auto &dd = DefineDataList[DefineDataID];
-    _ExpandTraceDefineAdd(dd.op, dd.Inputs.size() * sizeof(std::string_view));
+    _ExpandTraceDefineAdd(DefineDataID, dd.op, dd.Inputs.size() * sizeof(std::string_view));
+    CurrentExpand.define.pstack = DefineStack.i - dd.Inputs.size() * sizeof(std::string_view);
   }
 
   void _DeexpandFile(){
@@ -495,6 +518,9 @@ int main(int argc, const char **argv){
     print("need something to process\n");
     return 0;
   }
+
+  /* ddid 0 is for stack defines */
+  pile.DefineDataList.NewNode();
 
   pile.FileDataList[pile.FileDataList.NewNode()] = {
     .s = 6,
