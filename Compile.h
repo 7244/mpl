@@ -49,6 +49,9 @@ WordType IdentifyWordAndSkip(){
 
     return WordType::PreprocessorStart;
   }
+  else if(STR_ischar_char(gc()) || gc() == '_'){
+    return WordType::Identifier;
+  }
   else{
     printwi("cant identify %c", gc());
     __abort();
@@ -438,6 +441,101 @@ sint64_t GetPreprocessorNumber(){
   return v;
 }
 
+void ExpandPreprocessorIdentifier_ddid(uintptr_t ddid){
+  auto &dd = DefineDataList[ddid];
+
+  if(!dd.isfunc){
+    ExpandTraceDefineAdd(ddid);
+    return;
+  }
+
+  SkipEmptyInLine();
+  if(gc() != '('){
+    /* function called without parenthese. need to give 0. */
+
+    if(settings.Wmacro_incorrect_call){
+      printwi("Wmacro_incorrect_call");
+    }
+
+    *DefineStack.i++ = '0';
+    *DefineStack.i++ = '\n';
+    _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
+
+    return;
+  }
+
+  if(dd.va_args){
+    __abort();
+  }
+
+  uintptr_t pc = 0; /* parameter count */
+  ic_unsafe();
+  while(1){
+    SkipEmptyInLine();
+    if(EXPECT(gc() == '\n', false)){
+      errprint_exit("endline came too early");
+    }
+    else if(gc() == ')'){
+      break;
+    }
+    else if(gc() == ','){
+      *(std::string_view *)DefineStack.i = std::string_view((const char *)&gc(), 0);
+      DefineStack.i += sizeof(std::string_view);
+      pc++;
+      __abort();
+    }
+    else{
+      auto lp = &gc();
+      uintptr_t ScopeIn = 0;
+      while(1){
+        if(EXPECT(gc() == '\n', false)){
+          errprint_exit("endline came too early");;
+        }
+        else if(gc() == '('){
+          ScopeIn++;
+        }
+        else if(gc() == ')'){
+          if(!ScopeIn){
+            *(std::string_view *)DefineStack.i = std::string_view(
+              (const char *)lp,
+              (uintptr_t)&gc() - (uintptr_t)lp
+            );
+            DefineStack.i += sizeof(std::string_view);
+            pc++;
+            goto gt_funcend;
+          }
+          ScopeIn--;
+        }
+        else if(gc() == ',' && !ScopeIn){
+          *(std::string_view *)DefineStack.i = std::string_view(
+            (const char *)lp,
+            (uintptr_t)&gc() - (uintptr_t)lp
+          );
+          DefineStack.i += sizeof(std::string_view);
+          pc++;
+          ic_unsafe();
+          break;
+        }
+        ic_unsafe();
+      }
+    }
+  }
+
+  gt_funcend:;
+
+  if(EXPECT(dd.Inputs.size() - pc > 1, false)){
+    errprint_exit("expected %u parameters, got %u parameters.", dd.Inputs.size(), pc);
+  }
+
+  while(pc != dd.Inputs.size()){
+    *(std::string_view *)DefineStack.i = std::string_view((const char *)&gc(), 0);
+    DefineStack.i += sizeof(std::string_view);
+    pc++;
+  }
+
+  ExpandTraceDefineFunctionAdd(ddid);
+}
+
 void ExpandPreprocessorIdentifier(){
   auto SeekConcatenation = [&]() -> bool {
     SkipEmptyInLine();
@@ -542,100 +640,8 @@ void ExpandPreprocessorIdentifier(){
 
     return;
   }
-  uintptr_t ddid = ddmid->second;
 
-  auto &dd = DefineDataList[ddid];
-
-  if(!dd.isfunc){
-    ExpandTraceDefineAdd(ddid);
-    return;
-  }
-
-  SkipEmptyInLine();
-  if(gc() != '('){
-    /* function called without parenthese. need to give 0. */
-
-    if(settings.Wmacro_incorrect_call){
-      printwi("Wmacro_incorrect_call");
-    }
-
-    *DefineStack.i++ = '0';
-    *DefineStack.i++ = '\n';
-    _ExpandTraceDefineAdd(0, DefineStack.i - 2, 2);
-
-    return;
-  }
-
-  if(dd.va_args){
-    __abort();
-  }
-
-  uintptr_t pc = 0; /* parameter count */
-  ic_unsafe();
-  while(1){
-    SkipEmptyInLine();
-    if(EXPECT(gc() == '\n', false)){
-      errprint_exit("endline came too early");
-    }
-    else if(gc() == ')'){
-      break;
-    }
-    else if(gc() == ','){
-      *(std::string_view *)DefineStack.i = std::string_view((const char *)&gc(), 0);
-      DefineStack.i += sizeof(std::string_view);
-      pc++;
-      __abort();
-    }
-    else{
-      auto lp = &gc();
-      uintptr_t ScopeIn = 0;
-      while(1){
-        if(EXPECT(gc() == '\n', false)){
-          errprint_exit("endline came too early");;
-        }
-        else if(gc() == '('){
-          ScopeIn++;
-        }
-        else if(gc() == ')'){
-          if(!ScopeIn){
-            *(std::string_view *)DefineStack.i = std::string_view(
-              (const char *)lp,
-              (uintptr_t)&gc() - (uintptr_t)lp
-            );
-            DefineStack.i += sizeof(std::string_view);
-            pc++;
-            goto gt_funcend;
-          }
-          ScopeIn--;
-        }
-        else if(gc() == ',' && !ScopeIn){
-          *(std::string_view *)DefineStack.i = std::string_view(
-            (const char *)lp,
-            (uintptr_t)&gc() - (uintptr_t)lp
-          );
-          DefineStack.i += sizeof(std::string_view);
-          pc++;
-          ic_unsafe();
-          break;
-        }
-        ic_unsafe();
-      }
-    }
-  }
-
-  gt_funcend:;
-
-  if(EXPECT(dd.Inputs.size() - pc > 1, false)){
-    errprint_exit("expected %u parameters, got %u parameters.", dd.Inputs.size(), pc);
-  }
-
-  while(pc != dd.Inputs.size()){
-    *(std::string_view *)DefineStack.i = std::string_view((const char *)&gc(), 0);
-    DefineStack.i += sizeof(std::string_view);
-    pc++;
-  }
-
-  ExpandTraceDefineFunctionAdd(ddid);
+  ExpandPreprocessorIdentifier_ddid(ddmid->second);
 }
 
 void _ParsePreprocessorToCondition(uint8_t *stack){
@@ -1121,123 +1127,136 @@ bool Compile(){
 
     auto wt = IdentifyWordAndSkip();
 
-    if(wt == WordType::PreprocessorStart){
-      auto Identifier = GetIdentifier();
-      if(!Identifier.compare("eof")){
-        return 0;
-      }
-      else if(!Identifier.compare("error")){
-        const uint8_t *p;
-        const uint8_t *s;
-        ReadLineBeautifully(&p, &s);
-        errprint_exit("#error %.*s", (uintptr_t)s - (uintptr_t)p, p);
-      }
-      else if(!Identifier.compare("warning")){
-        const uint8_t *p;
-        const uint8_t *s;
-        ReadLineBeautifully(&p, &s);
-        printwi("#warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
-      }
-      else if(!Identifier.compare("include")){
-        SkipEmptyInLine();
-        auto ip = GetIncludePath();
-        ExpandFile(ip.Relative, ip.Name);
-      }
-      else if(!Identifier.compare("pragma")){
-        SkipEmptyInLine();
-        auto piden = GetIdentifier();
-        if(!piden.compare("once")){
-          if(!GetPragmaOnce()){
-            GetPragmaOnce() = true;
+    switch(wt){
+      case WordType::PreprocessorStart:{
+        auto Identifier = GetIdentifier();
+        if(!Identifier.compare("eof")){
+          return 0;
+        }
+        else if(!Identifier.compare("error")){
+          const uint8_t *p;
+          const uint8_t *s;
+          ReadLineBeautifully(&p, &s);
+          errprint_exit("#error %.*s", (uintptr_t)s - (uintptr_t)p, p);
+        }
+        else if(!Identifier.compare("warning")){
+          const uint8_t *p;
+          const uint8_t *s;
+          ReadLineBeautifully(&p, &s);
+          printwi("#warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
+        }
+        else if(!Identifier.compare("include")){
+          SkipEmptyInLine();
+          auto ip = GetIncludePath();
+          ExpandFile(ip.Relative, ip.Name);
+        }
+        else if(!Identifier.compare("pragma")){
+          SkipEmptyInLine();
+          auto piden = GetIdentifier();
+          if(!piden.compare("once")){
+            if(!GetPragmaOnce()){
+              GetPragmaOnce() = true;
+            }
+            else{
+              _DeexpandFile();
+              _Deexpand();
+            }
           }
           else{
-            _DeexpandFile();
-            _Deexpand();
+            __abort();
           }
         }
-        else{
-          __abort();
-        }
-      }
-      else if(!Identifier.compare("define")){
-        SkipEmptyInLine();
-        auto defiden = GetIdentifier();
+        else if(!Identifier.compare("define")){
+          SkipEmptyInLine();
+          auto defiden = GetIdentifier();
 
-        auto dmid = DefineDataMap.find(defiden);
-        if(dmid != DefineDataMap.end()){
-          if(settings.Wmacro_redefined){
-            printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
+          auto dmid = DefineDataMap.find(defiden);
+          if(dmid != DefineDataMap.end()){
+            if(settings.Wmacro_redefined){
+              printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
+            }
+            DefineDataMap.erase(defiden);
           }
-          DefineDataMap.erase(defiden);
-        }
 
-        auto ddid = DefineDataList.NewNode();
-        auto &d = DefineDataList[ddid];
-        if(gc() == '('){
-          d.isfunc = true;
-          ic();
-          GetDefineParams(d.Inputs, d.va_args);
-        }
-        else if(ischar_empty()){
+          auto ddid = DefineDataList.NewNode();
+          auto &d = DefineDataList[ddid];
           d.isfunc = false;
+          if(gc() == '('){
+            d.isfunc = true;
+            ic_unsafe();
+            GetDefineParams(d.Inputs, d.va_args);
+          }
+          else if(ischar_empty()){
+            ic_unsafe();
+          }
+          else if(gc() != '\n'){
+            __abort();
+          }
+
+          SkipEmptyInLine();
+          d.op = &gc();
+          while(gc() != '\n'){
+            ic_unsafe();
+          }
+          d.os = &gc();
           ic();
-        }
-        else if(gc() != '\n'){
-          __abort();
-        }
 
-        SkipEmptyInLine();
-        d.op = &gc();
-        while(gc() != '\n'){
-          ic_unsafe();
+          DefineDataMap[defiden] = ddid;
         }
-        d.os = &gc();
-        ic();
-
-        DefineDataMap[defiden] = ddid;
-      }
-      else if(!Identifier.compare("ifdef")){
-        PreprocessorIf(0, 0);
-      }
-      else if(!Identifier.compare("ifndef")){
-        PreprocessorIf(0, 1);
-      }
-      else if(!Identifier.compare("if")){
-        PreprocessorIf(0, 2);
-      }
-      else if(!Identifier.compare("elif")){
-        PreprocessorIf(1, 2);
-      }
-      else if(!Identifier.compare("else")){
-        PreprocessorIf(2, 3);
-      }
-      else if(!Identifier.compare("endif")){
-        PreprocessorIf(3, 0);
-      }
-      else if(!Identifier.compare("undef")){
-        SkipEmptyInLine();
-        auto defiden = GetIdentifier();
-        SkipCurrentEmptyLine();
-        if(DefineDataMap.find(defiden) == DefineDataMap.end()){
-          if(settings.Wmacro_not_defined){
-            printwi("warning, Wmacro-not-defined %.*s",
-              (uintptr_t)defiden.size(), defiden.data()
-            );
+        else if(!Identifier.compare("ifdef")){
+          PreprocessorIf(0, 0);
+        }
+        else if(!Identifier.compare("ifndef")){
+          PreprocessorIf(0, 1);
+        }
+        else if(!Identifier.compare("if")){
+          PreprocessorIf(0, 2);
+        }
+        else if(!Identifier.compare("elif")){
+          PreprocessorIf(1, 2);
+        }
+        else if(!Identifier.compare("else")){
+          PreprocessorIf(2, 3);
+        }
+        else if(!Identifier.compare("endif")){
+          PreprocessorIf(3, 0);
+        }
+        else if(!Identifier.compare("undef")){
+          SkipEmptyInLine();
+          auto defiden = GetIdentifier();
+          SkipCurrentEmptyLine();
+          if(DefineDataMap.find(defiden) == DefineDataMap.end()){
+            if(settings.Wmacro_not_defined){
+              printwi("warning, Wmacro-not-defined %.*s",
+                (uintptr_t)defiden.size(), defiden.data()
+              );
+            }
+          }
+          else{
+            DefineDataMap.erase(defiden);
           }
         }
         else{
-          DefineDataMap.erase(defiden);
+          printwi("unknown preprocessor identifier. %.*s",
+            (uintptr_t)Identifier.size(), Identifier.data()
+          );
+          __abort();
         }
+        break;
       }
-      else{
-        printwi("unknown preprocessor identifier. %.*s",
-          (uintptr_t)Identifier.size(), Identifier.data()
-        );
-        __abort();
+      case WordType::Identifier:{
+        auto iden = GetIdentifier();
+
+        auto ddmid = DefineDataMap.find(iden);
+        if(ddmid != DefineDataMap.end()){
+          ExpandPreprocessorIdentifier_ddid(ddmid->second);
+        }
+        else{
+          __abort();
+        }
+
+        break;
       }
-    }
-    else{
-      __abort();
     }
   }
 
