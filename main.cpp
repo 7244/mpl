@@ -259,15 +259,17 @@ struct pile_t{
       RelativePaths.push_back({});
       uintptr_t i = 0;
       for(; i < DefaultInclude.size(); i++){
-        if(IO_IsPathExists((DefaultInclude[i] + PathName).c_str())){
+        RelativePaths.back() = DefaultInclude[i] + PathName;
+        if(IO_IsPathExists(RelativePaths.back().c_str())){
           break;
         }
       }
       if(EXPECT(i == DefaultInclude.size(), false)){
+        RelativePaths.pop_back();
         errprint_exit("failed to find non relative include \"%s\"", PathName.c_str());
       }
 
-      RelativePaths.back().append(DefaultInclude[i]);
+      RelativePaths.back().resize(RelativePaths.back().size() - PathName.size());
     }
 
     std::string FileName;
