@@ -263,8 +263,8 @@ struct pile_t{
           break;
         }
       }
-      if(i == DefaultInclude.size()){
-        printwi("failed to find non relative include");
+      if(EXPECT(i == DefaultInclude.size(), false)){
+        errprint_exit("failed to find non relative include \"%s\"", PathName.c_str());
       }
 
       RelativePaths.back().append(DefaultInclude[i]);
@@ -311,7 +311,7 @@ struct pile_t{
 
       auto file_input_size = IO_stat_GetSizeInBytes(&st);
 
-      auto p = (uint8_t *)malloc(file_input_size + 1); /* + 1 for endline in end*/
+      auto p = (uint8_t *)malloc(file_input_size + 1); /* + 1 for endline in end */
       uintptr_t p_size = 0;
       {
         auto tp = (uint8_t *)malloc(file_input_size);
@@ -421,15 +421,30 @@ struct pile_t{
     #endif
     ++CurrentExpand.i;
   }
+  void ic_endline(){
+    if(IsLastExpandDefine()){
+      _DeexpandDefine();
+      _Deexpand();
+      return;
+    }
+    else{
+      CurrentExpand.i++;
+      while(CurrentExpand.i == CurrentExpand.s){
+        Deexpand();
+      }
+    }
+  }
   void _ic(){
     #if set_WriteToFile
       printstdout("%c", *CurrentExpand.i);
     #endif
-    CurrentExpand.i++;
-
-    while(CurrentExpand.i == CurrentExpand.s){
-      Deexpand();
+    if(gc() == '\n'){
+      ic_endline();
     }
+    else{
+      CurrentExpand.i++;
+    }
+
   }
   void ic(){
     _ic();

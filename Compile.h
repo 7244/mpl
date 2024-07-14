@@ -1,6 +1,5 @@
 bool ischar_empty(const uint8_t &c){
-  /* TOOD tab may be never there with simplyfile1 */
-  return c == ' ' || c == '\t';
+  return c == ' ';
 }
 bool ischar_empty(){
   return ischar_empty(gc());
@@ -52,9 +51,8 @@ WordType IdentifyWordAndSkip(){
   else if(STR_ischar_char(gc()) || gc() == '_'){
     return WordType::Identifier;
   }
-  else{
-    printwi("cant identify %c", gc());
-    __abort();
+  else [[unlikely]] {
+    errprint_exit("cant identify %c", gc());
   }
 
   __unreachable();
@@ -1024,7 +1022,7 @@ void _ParsePreprocessorToCondition(uint8_t *stack){
           while(1){
             if(gc() == '\n'){
               if(EXPECT(!IsLastExpandDefine(), false)){
-                errprint_exit("ternary operator failed to find :");
+                errprint_exit("preprocessor ternary operator failed to find :");
               }
               _DeexpandDefine();
               _Deexpand();
@@ -1120,9 +1118,16 @@ void PreprocessorIf(
 bool Compile(){
   while(1){
 
-    if(STR_ischar_blank(gc())){
-      ic();
-      continue;
+    while(1){
+      if(ischar_empty()){
+        ic_unsafe();
+      }
+      else if(gc() == '\n'){
+        ic_endline();
+      }
+      else{
+        break;
+      }
     }
 
     auto wt = IdentifyWordAndSkip();
@@ -1137,13 +1142,13 @@ bool Compile(){
           const uint8_t *p;
           const uint8_t *s;
           ReadLineBeautifully(&p, &s);
-          errprint_exit("#error %.*s", (uintptr_t)s - (uintptr_t)p, p);
+          errprint_exit("error: #error %.*s", (uintptr_t)s - (uintptr_t)p, p);
         }
         else if(!Identifier.compare("warning")){
           const uint8_t *p;
           const uint8_t *s;
           ReadLineBeautifully(&p, &s);
-          printwi("#warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
+          printwi("warning: #warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
         }
         else if(!Identifier.compare("include")){
           SkipEmptyInLine();
