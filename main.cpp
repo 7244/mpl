@@ -1,5 +1,9 @@
+#ifndef set_LineInformation
+  #define set_LineInformation 1
+#endif
+
 #ifndef set_WriteToFile
-  #define set_WriteToFile 1
+  #define set_WriteToFile 0
 #endif
 
 #ifndef set_support_c99
@@ -136,6 +140,10 @@ struct pile_t{
     /* they are here for performance reasons */
     const uint8_t *s;
     const uint8_t *i;
+
+    #if set_LineInformation
+      uintptr_t LineIndex;
+    #endif
   };
   expandtrace_data_t CurrentExpand;
   #define BLL_set_prefix ExpandTrace
@@ -234,7 +242,11 @@ struct pile_t{
           rp->c_str(),
           (uintptr_t)f.FileName.size(),
           f.FileName.data(),
-          (uintptr_t)et.i - (uintptr_t)f.p
+          #if set_LineInformation
+            et.LineIndex
+          #else
+            (uintptr_t)et.i - (uintptr_t)f.p
+          #endif
         );
         if(et.file.Relative){
           rpsize -= et.file.PathSize;
@@ -305,6 +317,10 @@ struct pile_t{
     auto &fd = FileDataList[FileDataID];
     CurrentExpand.s = &fd.p[fd.s];
     CurrentExpand.i = fd.p;
+
+    #if set_LineInformation
+      CurrentExpand.LineIndex = 0;
+    #endif
   }
 
   void ExpandTraceFileAdd(
@@ -511,8 +527,16 @@ struct pile_t{
     }
     else{
       CurrentExpand.i++;
-      while(CurrentExpand.i == CurrentExpand.s){
+      if(CurrentExpand.i != CurrentExpand.s){
+        #if set_LineInformation
+          CurrentExpand.LineIndex++;
+        #endif
+      }
+      else while(1){
         Deexpand();
+        if(CurrentExpand.i != CurrentExpand.s){
+          break;
+        }
       }
     }
   }

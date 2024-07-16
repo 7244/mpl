@@ -1144,7 +1144,7 @@ std::string_view SimplifyType(uintptr_t &TypeID){
 
     uintptr_t _bool = 0;
 
-    auto CheckCTypeLogic = [&]() -> uintptr_t {
+    auto CheckCTypeLogic = [&]() -> void {
       uintptr_t cor = _char | _short | _int | _long | _float | _double;
 
       if(EXPECT(_unsigned && _signed, false)){
@@ -1172,26 +1172,26 @@ std::string_view SimplifyType(uintptr_t &TypeID){
       }
 
       if(_void){
-        return (uintptr_t)SpecialTypeEnum::_void;
+        TypeID = (uintptr_t)SpecialTypeEnum::_void;
       }
       else if(_unsigned){
         if(_char){
-          return (uintptr_t)SpecialTypeEnum::_uint8_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_uint8_t;
         }
         else if(_short){
-          return (uintptr_t)SpecialTypeEnum::_uint16_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_uint16_t;
         }
         else if(_long == 1){
-          return (uintptr_t)SpecialTypeEnum::_uintptr_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_uintptr_t;
         }
         else if(_long == 2){
-          return (uintptr_t)SpecialTypeEnum::_uint64_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_uint64_t;
         }
         else{
           #if SYSTEM_BIT >= 32
-            return (uintptr_t)SpecialTypeEnum::_uint32_t;
+            TypeID = (uintptr_t)SpecialTypeEnum::_uint32_t;
           #elif SYSTEM_BIT == 16
-            return (uintptr_t)SpecialTypeEnum::_uint16_t;
+            TypeID =(uintptr_t)SpecialTypeEnum::_uint16_t;
           #else
             #error ?
           #endif
@@ -1201,22 +1201,22 @@ std::string_view SimplifyType(uintptr_t &TypeID){
         gt_signed:
 
         if(_char){
-          return (uintptr_t)SpecialTypeEnum::_sint8_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_sint8_t;
         }
         else if(_short){
-          return (uintptr_t)SpecialTypeEnum::_sint16_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_sint16_t;
         }
         else if(_long == 1){
-          return (uintptr_t)SpecialTypeEnum::_sintptr_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_sintptr_t;
         }
         else if(_long == 2){
-          return (uintptr_t)SpecialTypeEnum::_sint64_t;
+          TypeID = (uintptr_t)SpecialTypeEnum::_sint64_t;
         }
         else{
           #if SYSTEM_BIT >= 32
-            return (uintptr_t)SpecialTypeEnum::_sint32_t;
+            TypeID = (uintptr_t)SpecialTypeEnum::_sint32_t;
           #elif SYSTEM_BIT == 16
-            return (uintptr_t)SpecialTypeEnum::_sint16_t;
+            TypeID = (uintptr_t)SpecialTypeEnum::_sint16_t;
           #else
             #error ?
           #endif
@@ -1234,8 +1234,11 @@ std::string_view SimplifyType(uintptr_t &TypeID){
       else if(_long){
         goto gt_signed;
       }
-      else [[unlikely]] {
-        errprint_exit("type logic is failed");
+      else{
+        if(EXPECT(cor | _void | _unsigned | _signed | _bool, false)){
+          errprint_exit("type logic is failed");
+        }
+        TypeID = (uintptr_t)-1;
       }
     };
 
@@ -1298,8 +1301,17 @@ std::string_view SimplifyType(uintptr_t &TypeID){
           __abort();
         }
         else{
-          TypeID = CheckCTypeLogic();
-          return iden;
+          CheckCTypeLogic();
+          if(TypeID != (uintptr_t)-1){
+            return iden;
+          }
+          /* lets resolve iden */
+          auto it = IdentifierMap.find(iden);
+          if(EXPECT(it == IdentifierMap.end(), false)){
+            errprint_exit("failed to find type %.*s", (uintptr_t)iden.size(), iden.data());
+          }
+          TypeID = it->second;
+          return std::string_view();
         }
       }
       else if(gc() == '*'){
@@ -1606,8 +1618,9 @@ bool Compile(){
           SkipTillCode();
           uintptr_t lt;
           iden = SimplifyType(lt);
-          if(EXPECT(iden.size() == 0, false)){
-            errprint_exit("typedef expected right type but got %lx %c instead", gc(), gc());
+          if(iden.size() == 0){
+            SkipTillCode();
+            iden = GetIdentifier();
           }
           if(EXPECT(IdentifierMap.find(iden) != IdentifierMap.end(), false)){
             errprint_exit("typedef to something already exists");
