@@ -15,6 +15,20 @@ void SkipEmptyInLine(){
   }
 }
 
+void SkipTillCode(){
+  while(1){
+    if(gc() == '\n'){
+      ic_endline();
+    }
+    else if(ischar_empty()){
+      ic_unsafe();
+    }
+    else{
+      break;
+    }
+  }
+}
+
 /* beautifully just means no spaces in begin and end */
 /* TOOOD this function looks like mess. but can someone code faster than this? */
 void ReadLineBeautifully(const uint8_t **p, const uint8_t **s){
@@ -1115,6 +1129,196 @@ void PreprocessorIf(
   SkipCurrentLine();
 }
 
+/* returns identifier that it didnt understand */
+std::string_view SimplifyType(uintptr_t &TypeID){
+  #if set_support_c99
+    uintptr_t _void = 0;
+    uintptr_t _unsigned = 0;
+    uintptr_t _signed = 0;
+    uintptr_t _char = 0;
+    uintptr_t _short = 0;
+    uintptr_t _int = 0;
+    uintptr_t _long = 0;
+    uintptr_t _float = 0;
+    uintptr_t _double = 0;
+
+    uintptr_t _bool = 0;
+
+    auto CheckCTypeLogic = [&]() -> uintptr_t {
+      uintptr_t cor = _char | _short | _int | _long | _float | _double;
+
+      if(EXPECT(_unsigned && _signed, false)){
+        errprint_exit("unsigned and signed is together");
+      }
+
+      if(EXPECT(_void && (_unsigned | _signed | _bool | cor), false)){
+        errprint_exit("weird stuff with void");
+      }
+
+      if(EXPECT(_bool && (_unsigned | _signed | _void | cor), false)){
+        errprint_exit("weird stuff with bool");
+      }
+
+      if(EXPECT((_unsigned | _signed) && (_float | _double), false)){
+        errprint_exit("signs cant be specified with floating points");
+      }
+
+      if(EXPECT(_char && _int, false)){
+        errprint_exit("char and int cant be together");
+      }
+
+      if(EXPECT(_char + _short + !!_long > 1, false)){
+        errprint_exit("too many different types");
+      }
+
+      if(_void){
+        return (uintptr_t)SpecialTypeEnum::_void;
+      }
+      else if(_unsigned){
+        if(_char){
+          return (uintptr_t)SpecialTypeEnum::_uint8_t;
+        }
+        else if(_short){
+          return (uintptr_t)SpecialTypeEnum::_uint16_t;
+        }
+        else if(_long == 1){
+          return (uintptr_t)SpecialTypeEnum::_uintptr_t;
+        }
+        else if(_long == 2){
+          return (uintptr_t)SpecialTypeEnum::_uint64_t;
+        }
+        else{
+          #if SYSTEM_BIT >= 32
+            return (uintptr_t)SpecialTypeEnum::_uint32_t;
+          #elif SYSTEM_BIT == 16
+            return (uintptr_t)SpecialTypeEnum::_uint16_t;
+          #else
+            #error ?
+          #endif
+        }
+      }
+      else if(_signed){
+        gt_signed:
+
+        if(_char){
+          return (uintptr_t)SpecialTypeEnum::_sint8_t;
+        }
+        else if(_short){
+          return (uintptr_t)SpecialTypeEnum::_sint16_t;
+        }
+        else if(_long == 1){
+          return (uintptr_t)SpecialTypeEnum::_sintptr_t;
+        }
+        else if(_long == 2){
+          return (uintptr_t)SpecialTypeEnum::_sint64_t;
+        }
+        else{
+          #if SYSTEM_BIT >= 32
+            return (uintptr_t)SpecialTypeEnum::_sint32_t;
+          #elif SYSTEM_BIT == 16
+            return (uintptr_t)SpecialTypeEnum::_sint16_t;
+          #else
+            #error ?
+          #endif
+        }
+      }
+      else if(_char){
+        goto gt_signed;
+      }
+      else if(_short){
+        goto gt_signed;
+      }
+      else if(_int){
+        goto gt_signed;
+      }
+      else if(_long){
+        goto gt_signed;
+      }
+      else [[unlikely]] {
+        errprint_exit("type logic is failed");
+      }
+    };
+
+    while(1){
+      if(STR_ischar_char(gc()) || gc() == '_'){
+        auto iden = GetIdentifier();
+        if(!iden.compare("void")){
+          if(EXPECT(++_void > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("unsigned")){
+          if(EXPECT(++_unsigned > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("signed")){
+          if(EXPECT(++_signed > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("char")){
+          if(EXPECT(++_char > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("short")){
+          if(EXPECT(++_short > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("int")){
+          if(EXPECT(++_int > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("long")){
+          if(EXPECT(++_long > 2, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("bool")){
+          if(EXPECT(++_bool > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("float")){
+          __abort(); // check how they go with long
+          if(EXPECT(++_float > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("double")){
+          __abort(); // check how they go with long
+          if(EXPECT(++_double > 1, false)){
+            errprint_exit("too many types");
+          }
+        }
+        else if(!iden.compare("const")){
+          __abort();
+        }
+        else{
+          TypeID = CheckCTypeLogic();
+          return iden;
+        }
+      }
+      else if(gc() == '*'){
+        __abort();
+      }
+      else{
+        break;
+      }
+
+      SkipTillCode();
+    }
+
+    __abort();
+    __unreachable();
+  #else
+    #error ?
+  #endif
+}
+
 bool Compile(){
   while(1){
 
@@ -1399,8 +1603,21 @@ bool Compile(){
           __abort();
         }
         else if(!iden.compare("typedef")){
-          print_ExpandTrace();
-          __abort();
+          SkipTillCode();
+          uintptr_t lt;
+          iden = SimplifyType(lt);
+          if(EXPECT(iden.size() == 0, false)){
+            errprint_exit("typedef expected right type but got %lx %c instead", gc(), gc());
+          }
+          if(EXPECT(IdentifierMap.find(iden) != IdentifierMap.end(), false)){
+            errprint_exit("typedef to something already exists");
+          }
+          IdentifierMap[iden] = lt;
+          SkipTillCode();
+          if(gc() != ';'){
+            errprint_exit("expected ; after typedef");
+          }
+          ic_unsafe();
         }
         else if(!iden.compare("typeof")){
           print_ExpandTrace();

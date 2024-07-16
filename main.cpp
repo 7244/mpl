@@ -160,7 +160,16 @@ struct pile_t{
     _uint8_t,
     _sint8_t,
     _bool,
-    l
+    l,
+    #if SYSTEM_BIT == 64
+      _uintptr_t = _uint64_t,
+      _sintptr_t = _sint64_t
+    #elif SYSTEM_BIT == 32
+      _uintptr_t = _uint32_t,
+      _sintptr_t = _sint32_t
+    #else
+      #error ?
+    #endif
   };
   struct TypeData_t{
     uintptr_t filler;
@@ -198,15 +207,8 @@ struct pile_t{
       pile->IdentifierMap["sint8_t"] = (uintptr_t)SpecialTypeEnum::_sint8_t;
       pile->IdentifierMap["bool"] = (uintptr_t)SpecialTypeEnum::_bool;
 
-      #if SYSTEM_BIT == 64
-        pile->IdentifierMap["uintptr_t"] = (uintptr_t)SpecialTypeEnum::_uint64_t;
-        pile->IdentifierMap["sintptr_t"] = (uintptr_t)SpecialTypeEnum::_sint64_t;
-      #elif SYSTEM_BIT == 32
-        pile->IdentifierMap["uintptr_t"] = (uintptr_t)SpecialTypeEnum::_uint32_t;
-        pile->IdentifierMap["sintptr_t"] = (uintptr_t)SpecialTypeEnum::_sint32_t;
-      #else
-        #error ?
-      #endif
+      pile->IdentifierMap["uintptr_t"] = (uintptr_t)SpecialTypeEnum::_uintptr_t;
+      pile->IdentifierMap["sintptr_t"] = (uintptr_t)SpecialTypeEnum::_sintptr_t;
     }
   }TypeInit;
 
