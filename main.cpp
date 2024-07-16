@@ -2,6 +2,13 @@
   #define set_WriteToFile 1
 #endif
 
+#ifndef set_support_c99
+  #define set_support_c99 1
+#endif
+#ifndef set_forcerules_c99
+  #define set_forcerules_c99 1
+#endif
+
 #include <WITCH/WITCH.h>
 #include <WITCH/IO/IO.h>
 #include <WITCH/IO/print.h>
@@ -136,12 +143,72 @@ struct pile_t{
   #define BLL_set_Recycle 0
   #define BLL_set_IntegerNR 1
   #define BLL_set_CPP_ConstructDestruct 1
-  #define BLL_set_CPP_Node_ConstructDestruct 1
   #define BLL_set_AreWeInsideStruct 1
   #define BLL_set_NodeDataType expandtrace_data_t
   #define BLL_set_type_node uintptr_t
   #include <BLL/BLL.h>
   ExpandTrace_t ExpandTrace;
+
+  enum class SpecialTypeEnum : uintptr_t{
+    _void,
+    _uint64_t,
+    _sint64_t,
+    _uint32_t,
+    _sint32_t,
+    _uint16_t,
+    _sint16_t,
+    _uint8_t,
+    _sint8_t,
+    _bool,
+    l
+  };
+  struct TypeData_t{
+    uintptr_t filler;
+  };
+  #define BLL_set_prefix TypeList
+  #define BLL_set_Link 0
+  #define BLL_set_Recycle 0
+  #define BLL_set_IntegerNR 1
+  #define BLL_set_CPP_ConstructDestruct 1
+  #define BLL_set_CPP_Node_ConstructDestruct 1
+  #define BLL_set_AreWeInsideStruct 1
+  #define BLL_set_NodeDataType TypeData_t
+  #define BLL_set_type_node uintptr_t
+  #include <BLL/BLL.h>
+  TypeList_t TypeList;
+
+  std::map<std::string_view, uintptr_t> IdentifierMap;
+
+  struct TypeInit_t{
+    TypeInit_t(){
+      auto pile = OFFSETLESS(this, pile_t, TypeInit);
+
+      for(auto l = (uintptr_t)SpecialTypeEnum::l; l--;){
+        pile->TypeList.inc();
+      }
+
+      pile->IdentifierMap["void"] = (uintptr_t)SpecialTypeEnum::_void;
+      pile->IdentifierMap["uint64_t"] = (uintptr_t)SpecialTypeEnum::_uint64_t;
+      pile->IdentifierMap["sint64_t"] = (uintptr_t)SpecialTypeEnum::_sint64_t;
+      pile->IdentifierMap["uint32_t"] = (uintptr_t)SpecialTypeEnum::_uint32_t;
+      pile->IdentifierMap["sint32_t"] = (uintptr_t)SpecialTypeEnum::_sint32_t;
+      pile->IdentifierMap["uint16_t"] = (uintptr_t)SpecialTypeEnum::_uint16_t;
+      pile->IdentifierMap["sint16_t"] = (uintptr_t)SpecialTypeEnum::_sint16_t;
+      pile->IdentifierMap["uint8_t"] = (uintptr_t)SpecialTypeEnum::_uint8_t;
+      pile->IdentifierMap["sint8_t"] = (uintptr_t)SpecialTypeEnum::_sint8_t;
+      pile->IdentifierMap["bool"] = (uintptr_t)SpecialTypeEnum::_bool;
+
+      #if SYSTEM_BIT == 64
+        pile->IdentifierMap["uintptr_t"] = (uintptr_t)SpecialTypeEnum::_uint64_t;
+        pile->IdentifierMap["sintptr_t"] = (uintptr_t)SpecialTypeEnum::_sint64_t;
+      #elif SYSTEM_BIT == 32
+        pile->IdentifierMap["uintptr_t"] = (uintptr_t)SpecialTypeEnum::_uint32_t;
+        pile->IdentifierMap["sintptr_t"] = (uintptr_t)SpecialTypeEnum::_sint32_t;
+      #else
+        #error ?
+      #endif
+    }
+  }TypeInit;
 
   bool &GetPragmaOnce(){
     return FileDataList[CurrentExpand.DataID].pragma_once;
@@ -256,6 +323,14 @@ struct pile_t{
 
   void ExpandFile(bool Relative, const std::string &PathName){
     if(!Relative){
+      /* check for placebo headers */
+      if(!PathName.compare("stddef.h")){
+        return;
+      }
+      else if(!PathName.compare("stdarg.h")){
+        return;
+      }
+
       RelativePaths.push_back({});
       uintptr_t i = 0;
       for(; i < DefaultInclude.size(); i++){
@@ -424,6 +499,9 @@ struct pile_t{
     ++CurrentExpand.i;
   }
   void ic_endline(){
+    #if set_WriteToFile
+      printstdout("%c", '\n');
+    #endif
     if(IsLastExpandDefine()){
       _DeexpandDefine();
       _Deexpand();
@@ -437,13 +515,13 @@ struct pile_t{
     }
   }
   void _ic(){
-    #if set_WriteToFile
-      printstdout("%c", *CurrentExpand.i);
-    #endif
     if(gc() == '\n'){
       ic_endline();
     }
     else{
+      #if set_WriteToFile
+        printstdout("%c", *CurrentExpand.i);
+      #endif
       CurrentExpand.i++;
     }
 

@@ -1256,7 +1256,170 @@ bool Compile(){
         if(ddmid != DefineDataMap.end()){
           ExpandPreprocessorIdentifier_ddid(ddmid->second);
         }
+        else if(!iden.compare("void")){
+          print_ExpandTrace();
+          __abort();
+        }
+        #if set_support_c99
+          else if(!iden.compare("unsigned")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("signed")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("auto")){
+            /* useless keyword */
+          }
+        #endif
+        else if(!iden.compare("restrict")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("register")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("bool")){
+          print_ExpandTrace();
+          __abort();
+        }
+        #if set_support_c99
+          else if(!iden.compare("char")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("short")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("int")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("long")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("float")){
+            print_ExpandTrace();
+            __abort();
+          }
+          else if(!iden.compare("double")){
+            print_ExpandTrace();
+            __abort();
+          }
+        #endif
+        else if(!iden.compare("nullptr")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("break")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("case")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("const")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("continue")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("default")){
+          print_ExpandTrace();
+          __abort();
+        }
+        #if set_support_c99
+          else if(!iden.compare("do")){
+            print_ExpandTrace();
+            __abort();
+          }
+        #endif
+        else if(!iden.compare("if")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("else")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("enum")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("extern")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("false")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("true")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("for")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("goto")){
+          print_ExpandTrace();
+          __abort();
+        }
+        #if set_support_c99
+          else if(!iden.compare("inline")){
+            /* useless keyword */
+          }
+        #endif
+        else if(!iden.compare("return")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("sizeof")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("static")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("struct")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("switch")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("typedef")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("typeof")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("union")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("volatile")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("while")){
+          print_ExpandTrace();
+          __abort();
+        }
         else{
+          printwi("unknown identifier %.*s", iden.size(), iden.data());
           __abort();
         }
 
