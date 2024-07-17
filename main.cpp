@@ -70,7 +70,8 @@ struct pile_t{
   FileDataList_t FileDataList;
   std::map<std::string, uintptr_t> FileDataMap; /* points FileDataList */
 
-  std::vector<std::string> RelativePaths;
+  std::string RelativePaths;
+  std::vector<uintptr_t> RelativePathsSize;
 
   #define BLL_set_prefix DefineDataList
   #define BLL_set_Link 0
@@ -228,8 +229,11 @@ struct pile_t{
     /* for stack heap sync */
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
 
-    auto rp = &RelativePaths.back();
-    uintptr_t rpsize = rp->size();
+    uintptr_t RelativePathSizeIndex = RelativePathsSize.size() - 2;
+
+    uintptr_t rpsize = RelativePaths.size();
+    auto rpindex = rpsize;
+    rpindex -= RelativePathsSize.back();
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
       if(et.DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
@@ -238,10 +242,10 @@ struct pile_t{
         auto &f = FileDataList[FileDataID];
         printstderr(
           "%.*s%.*s:%u\n",
-          rpsize,
-          rp->c_str(),
+          rpsize - rpindex,
+          &RelativePaths.c_str()[rpindex],
           (uintptr_t)f.FileName.size(),
-          f.FileName.data(),
+          f.FileName.c_str(),
           #if set_LineInformation
             et.LineIndex
           #else
@@ -252,8 +256,8 @@ struct pile_t{
           rpsize -= et.file.PathSize;
         }
         else{
-          rp--;
-          rpsize = rp->size();
+          rpsize = rpindex;
+          rpindex -= RelativePathsSize[RelativePathSizeIndex--];
         }
       }
       else{
@@ -349,20 +353,18 @@ struct pile_t{
         return;
       }
 
-      RelativePaths.push_back({});
       uintptr_t i = 0;
       for(; i < DefaultInclude.size(); i++){
-        RelativePaths.back() = DefaultInclude[i] + PathName;
-        if(IO_IsPathExists(RelativePaths.back().c_str())){
+        if(IO_IsPathExists((DefaultInclude[i] + PathName).c_str())){
           break;
         }
       }
       if(EXPECT(i == DefaultInclude.size(), false)){
-        RelativePaths.pop_back();
         errprint_exit("failed to find non relative include \"%s\"", PathName.c_str());
       }
 
-      RelativePaths.back().resize(RelativePaths.back().size() - PathName.size());
+      RelativePaths.append(DefaultInclude[i]);
+      RelativePathsSize.push_back(DefaultInclude[i].size());
     }
 
     std::string FileName;
@@ -378,11 +380,17 @@ struct pile_t{
 
       FileName = std::string((const char *)&PathName[i + 1], PathName.size() - i - 1);
       if(i > 0){
-        RelativePaths.back().append(PathName, 0, i + 1);
+        RelativePaths.append(PathName, 0, i + 1);
+        RelativePathsSize.back() += i + 1;
       }
     }
 
-    std::string abspath = RelativePaths.back() + FileName;
+    auto abspath =
+      std::string(
+        RelativePaths.begin() + RelativePaths.size() - RelativePathsSize.back(),
+        RelativePaths.end()
+      ) + FileName
+    ;
 
     uintptr_t FileDataID;
 
@@ -470,12 +478,13 @@ struct pile_t{
   }
 
   void _DeexpandFile(){
+    auto &rp = RelativePaths;
     if(CurrentExpand.file.Relative){
-      auto &rp = RelativePaths.back();
       rp = rp.substr(0, rp.size() - CurrentExpand.file.PathSize);
     }
     else{
-      RelativePaths.pop_back();
+      rp = rp.substr(0, rp.size() - RelativePathsSize.back());
+      RelativePathsSize.pop_back();
     }
   }
   void _DeexpandDefine(){
@@ -662,7 +671,8 @@ int main(int argc, const char **argv){
   pile._ExpandTraceFileSet(0, true, 0);
   pile.ExpandTrace.inc();
 
-  pile.RelativePaths.push_back({});
+  pile.RelativePaths += '\n';
+  pile.RelativePathsSize.push_back(0);
 
   pile.ExpandFile(true, pile.filename);
 
