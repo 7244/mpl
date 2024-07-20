@@ -1395,12 +1395,35 @@ bool Compile(){
           if(dmid != DefineDataMap.end()){
             if(settings.Wmacro_redefined){
               printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
+              printstderr("previously defined at\n");
+              print_TraceDataLink(DefineDataList[dmid->second].TraceCount, DefineDataList[dmid->second].DataLinkID);
+              printstderr("\n");
             }
             DefineDataMap.erase(defiden);
           }
 
           auto ddid = DefineDataList.NewNode();
           auto &d = DefineDataList[ddid];
+
+          #if __sanit
+            d.DataLinkID.sic();
+          #endif
+          d.TraceCount = 0;
+          for(uintptr_t eti = ExpandTrace.Usage(); eti-- > 1;){
+            d.TraceCount++;
+            auto tdlid = d.DataLinkID;
+            d.DataLinkID = DataLink.NewNode();
+            DataLink[d.DataLinkID].dlid = tdlid;
+            DataLink[d.DataLinkID].DataID = ExpandTrace[eti].DataID;
+            DataLink[d.DataLinkID].LineIndex =
+              #if set_LineInformation
+                ExpandTrace[eti].LineIndex
+              #else
+                (uintptr_t)ExpandTrace[eti].i
+              #endif
+            ;
+          }
+
           d.isfunc = false;
           if(gc() == '('){
             d.isfunc = true;

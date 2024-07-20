@@ -1,3 +1,7 @@
+#ifndef set_StoreTrace
+  #define set_StoreTrace 1
+#endif
+
 #ifndef set_LineInformation
   #define set_LineInformation 1
 #endif
@@ -64,15 +68,42 @@ struct pile_t{
     bool pragma_once = false; \
     uintptr_t s; \
     uint8_t *p; \
-    std::string FileName;
+    std::string FullPath; \
+    uintptr_t FileNameSize;
   #define BLL_set_type_node uintptr_t
   #include <BLL/BLL.h>
   FileDataList_t FileDataList;
   std::map<std::string, uintptr_t> FileDataMap; /* points FileDataList */
 
+  #if set_StoreTrace
+    /* used for store expand trace */
+    #define BLL_set_prefix DataLink
+    #define BLL_set_Link 0
+    #define BLL_set_CPP_ConstructDestruct 1
+    #define BLL_set_AreWeInsideStruct 1
+    #define BLL_set_NodeData \
+      DataLink_NodeReference_t dlid; \
+      uintptr_t DataID; \
+      uintptr_t LineIndex;
+    #define BLL_set_type_node uintptr_t
+    #include <BLL/BLL.h>
+    DataLink_t DataLink;
+  #endif
+
   std::string RelativePaths;
   std::vector<uintptr_t> RelativePathsSize;
 
+  struct DefineDataType_t{
+    bool isfunc;
+    std::map<std::string_view, uintptr_t> Inputs;
+    bool va_args;
+    const uint8_t *op; /* output pointer */
+    const uint8_t *os; /* output size */
+    #if set_StoreTrace
+      uintptr_t TraceCount;
+      DataLink_t::nr_t DataLinkID;
+    #endif
+  };
   #define BLL_set_prefix DefineDataList
   #define BLL_set_Link 0
   #define BLL_set_Recycle 1
@@ -81,12 +112,7 @@ struct pile_t{
   #define BLL_set_CPP_Node_ConstructDestruct 1
   #define BLL_set_CPP_CopyAtPointerChange 1
   #define BLL_set_AreWeInsideStruct 1
-  #define BLL_set_NodeData \
-    bool isfunc; \
-    std::map<std::string_view, uintptr_t> Inputs; \
-    bool va_args; \
-    const uint8_t *op; /* output pointer */ \
-    const uint8_t *os; /* output size */
+  #define BLL_set_NodeDataType DefineDataType_t
   #define BLL_set_type_node uintptr_t
   #include <BLL/BLL.h>
   DefineDataList_t DefineDataList;
@@ -225,64 +251,65 @@ struct pile_t{
     return FileDataList[CurrentExpand.DataID].pragma_once;
   }
 
+  void print_TraceDataID(uintptr_t DataID, uintptr_t LineIndex){
+    if(DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
+      uintptr_t FileDataID = DataID ^ (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
+
+      auto &f = FileDataList[FileDataID];
+      printstderr(
+        "In file included from %s:%u\n",
+        f.FullPath.c_str(),
+        #if set_LineInformation
+          LineIndex
+        #else
+          (uintptr_t)et.i - (uintptr_t)f.p
+        #endif
+      );
+    }
+    else{
+      if(DataID == 0){
+        printstderr("inside stack or flat define\n");
+      }
+      else{
+        auto &dd = DefineDataList[DataID];
+        printstderr("inside function define(");
+        uintptr_t pi = 0;
+        while(pi != dd.Inputs.size()){
+          for(auto const &it : dd.Inputs){
+            if(it.second == pi){
+              printstderr("%.*s", (uintptr_t)it.first.size(), it.first.data());
+              pi++;
+              if(pi != dd.Inputs.size()){
+                printstderr(",");
+              }
+              break;
+            }
+          }
+        }
+        printstderr(")\n");
+      }
+    }
+  }
+  void print_TraceDataLink(uintptr_t TraceCount, DataLink_t::nr_t dlid){
+    while(TraceCount--){
+      print_TraceDataID(DataLink[dlid].DataID, DataLink[dlid].LineIndex);
+      dlid = DataLink[dlid].dlid;
+    }
+  }
   void print_ExpandTrace(){
     /* for stack heap sync */
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
 
-    uintptr_t RelativePathSizeIndex = RelativePathsSize.size() - 2;
-
-    uintptr_t rpsize = RelativePaths.size();
-    auto rpindex = rpsize;
-    rpindex -= RelativePathsSize.back();
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
-      if(et.DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
-        uintptr_t FileDataID = et.DataID ^ (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
-
-        auto &f = FileDataList[FileDataID];
-        printstderr(
-          "%.*s%.*s:%u\n",
-          rpsize - rpindex,
-          &RelativePaths.c_str()[rpindex],
-          (uintptr_t)f.FileName.size(),
-          f.FileName.c_str(),
-          #if set_LineInformation
-            et.LineIndex
-          #else
-            (uintptr_t)et.i - (uintptr_t)f.p
-          #endif
-        );
-        if(et.file.Relative){
-          rpsize -= et.file.PathSize;
-        }
-        else{
-          rpsize = rpindex;
-          rpindex -= RelativePathsSize[RelativePathSizeIndex--];
-        }
-      }
-      else{
-        if(et.DataID == 0){
-          printstderr("inside stack or flat define\n");
-        }
-        else{
-          auto &dd = DefineDataList[et.DataID];
-          printstderr("inside function define(");
-          uintptr_t pi = 0;
-          while(pi != dd.Inputs.size()){
-            for(auto const &it : dd.Inputs){
-              if(it.second == pi){
-                printstderr("%.*s", (uintptr_t)it.first.size(), it.first.data());
-                pi++;
-                if(pi != dd.Inputs.size()){
-                  printstderr(",");
-                }
-                break;
-              }
-            }
-          }
-          printstderr(")\n");
-        }
-      }
+      print_TraceDataID(
+        et.DataID,
+        #if set_LineInformation
+          et.LineIndex
+        #else
+          (uintptr_t)et.i
+        #endif
+      );
     }
   }
   /* print with info */
@@ -367,7 +394,7 @@ struct pile_t{
       RelativePathsSize.push_back(DefaultInclude[i].size());
     }
 
-    std::string FileName;
+    uintptr_t FileNameSize;
     {
       sintptr_t i = PathName.size();
       while(i--){
@@ -378,7 +405,7 @@ struct pile_t{
 
       /* TODO check if slash has something before itself */
 
-      FileName = std::string((const char *)&PathName[i + 1], PathName.size() - i - 1);
+      FileNameSize = PathName.size() - i - 1;
       if(i > 0){
         RelativePaths.append(PathName, 0, i + 1);
         RelativePathsSize.back() += i + 1;
@@ -389,7 +416,7 @@ struct pile_t{
       std::string(
         RelativePaths.begin() + RelativePaths.size() - RelativePathsSize.back(),
         RelativePaths.end()
-      ) + FileName
+      ) + std::string(PathName.end() - FileNameSize, PathName.end())
     ;
 
     uintptr_t FileDataID;
@@ -444,7 +471,8 @@ struct pile_t{
       FileDataList[FileDataList.NewNode()] = {
         .s = p_size,
         .p = p,
-        .FileName = FileName
+        .FullPath = abspath,
+        .FileNameSize = FileNameSize
       };
       FileDataID = FileDataList.Usage() - 1;
 
