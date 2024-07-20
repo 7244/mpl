@@ -1396,7 +1396,8 @@ bool Compile(){
             if(settings.Wmacro_redefined){
               printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
               printstderr("previously defined at\n");
-              print_TraceDataLink(DefineDataList[dmid->second].TraceCount, DefineDataList[dmid->second].DataLinkID);
+              auto &dd = DefineDataList[dmid->second];
+              print_TraceDataLink(dd.TraceCount, dd.DataLinkID);
               printstderr("\n");
             }
             DefineDataMap.erase(defiden);
@@ -1409,7 +1410,7 @@ bool Compile(){
             d.DataLinkID.sic();
           #endif
           d.TraceCount = 0;
-          for(uintptr_t eti = ExpandTrace.Usage(); eti-- > 1;){
+          for(uintptr_t eti = 0; ++eti < ExpandTrace.Usage();){
             d.TraceCount++;
             auto tdlid = d.DataLinkID;
             d.DataLinkID = DataLink.NewNode();

@@ -103,6 +103,15 @@ struct pile_t{
       uintptr_t TraceCount;
       DataLink_t::nr_t DataLinkID;
     #endif
+
+    void destructor(pile_t &pile){
+      DataLink_t::nr_t dlid = DataLinkID;
+      for(auto tc = TraceCount; tc--;){
+        auto t = pile.DataLink[dlid].dlid;
+        pile.DataLink.Recycle(dlid);
+        dlid = t;
+      }
+    }
   };
   #define BLL_set_prefix DefineDataList
   #define BLL_set_Link 0
@@ -120,6 +129,7 @@ struct pile_t{
     void erase(auto i){
       auto o = operator[](i);
       auto &pile = *OFFSETLESS(this, pile_t, DefineDataMap);
+      pile.DefineDataList[o].destructor(pile);
       pile.DefineDataList.Recycle(o);
       std::map<std::string_view, uintptr_t>::erase(i);
     }
