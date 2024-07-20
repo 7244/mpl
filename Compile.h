@@ -31,7 +31,7 @@ void SkipTillCode(){
 
 /* beautifully just means no spaces in begin and end */
 /* TOOOD this function looks like mess. but can someone code faster than this? */
-void ReadLineBeautifully(const uint8_t **p, const uint8_t **s){
+void ReadLineBeautifully0(const uint8_t **p, const uint8_t **s){
   SkipEmptyInLine();
   *p = &gc();
   *s = &gc();
@@ -39,7 +39,6 @@ void ReadLineBeautifully(const uint8_t **p, const uint8_t **s){
     while(!ischar_empty()){
       if(gc() == '\n'){
         *s = &gc();
-        ic();
         return;
       }
       ic_unsafe();
@@ -47,7 +46,6 @@ void ReadLineBeautifully(const uint8_t **p, const uint8_t **s){
     *s = &gc();
     SkipEmptyInLine();
   }
-  ic();
 }
 
 enum class WordType : uint8_t{
@@ -66,7 +64,7 @@ WordType IdentifyWordAndSkip(){
     return WordType::Identifier;
   }
   else [[unlikely]] {
-    errprint_exit("cant identify %c", gc());
+    errprint_exit("cant identify %lx %c", gc(), gc());
   }
 
   __unreachable();
@@ -1357,14 +1355,16 @@ bool Compile(){
         else if(!Identifier.compare("error")){
           const uint8_t *p;
           const uint8_t *s;
-          ReadLineBeautifully(&p, &s);
+          ReadLineBeautifully0(&p, &s);
           errprint_exit("error: #error %.*s", (uintptr_t)s - (uintptr_t)p, p);
+          ic_endline();
         }
         else if(!Identifier.compare("warning")){
           const uint8_t *p;
           const uint8_t *s;
-          ReadLineBeautifully(&p, &s);
+          ReadLineBeautifully0(&p, &s);
           printwi("warning: #warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
+          ic_endline();
         }
         else if(!Identifier.compare("include")){
           SkipEmptyInLine();
@@ -1406,6 +1406,7 @@ bool Compile(){
           auto ddid = DefineDataList.NewNode();
           auto &d = DefineDataList[ddid];
 
+          ExpandSync();
           #if __sanit
             d.DataLinkID.sic();
           #endif
@@ -1416,13 +1417,7 @@ bool Compile(){
             d.DataLinkID = DataLink.NewNode();
             DataLink[d.DataLinkID].dlid = tdlid;
             DataLink[d.DataLinkID].DataID = ExpandTrace[eti].DataID;
-            DataLink[d.DataLinkID].LineIndex =
-              #if set_LineInformation
-                ExpandTrace[eti].LineIndex
-              #else
-                (uintptr_t)ExpandTrace[eti].i
-              #endif
-            ;
+            DataLink[d.DataLinkID].Offset = (uintptr_t)ExpandTrace[eti].i;
           }
 
           d.isfunc = false;

@@ -1,9 +1,9 @@
-#ifndef set_StoreTrace
-  #define set_StoreTrace 1
+#ifndef set_LineInformationPlus
+  #define set_LineInformationPlus 1
 #endif
 
-#ifndef set_LineInformation
-  #define set_LineInformation 1
+#ifndef set_StoreTrace
+  #define set_StoreTrace 1
 #endif
 
 #ifndef set_WriteToFile
@@ -66,6 +66,8 @@ struct pile_t{
   #define BLL_set_AreWeInsideStruct 1
   #define BLL_set_NodeData \
     bool pragma_once = false; \
+    uintptr_t orig_s; \
+    uint8_t *orig_p; \
     uintptr_t s; \
     uint8_t *p; \
     std::string FullPath; \
@@ -84,7 +86,7 @@ struct pile_t{
     #define BLL_set_NodeData \
       DataLink_NodeReference_t dlid; \
       uintptr_t DataID; \
-      uintptr_t LineIndex;
+      uintptr_t Offset;
     #define BLL_set_type_node uintptr_t
     #include <BLL/BLL.h>
     DataLink_t DataLink;
@@ -177,10 +179,6 @@ struct pile_t{
     /* they are here for performance reasons */
     const uint8_t *s;
     const uint8_t *i;
-
-    #if set_LineInformation
-      uintptr_t LineIndex;
-    #endif
   };
   expandtrace_data_t CurrentExpand;
   #define BLL_set_prefix ExpandTrace
@@ -261,19 +259,39 @@ struct pile_t{
     return FileDataList[CurrentExpand.DataID].pragma_once;
   }
 
-  void print_TraceDataID(uintptr_t DataID, uintptr_t LineIndex){
+  void GetInfoFromFile(
+    uintptr_t coffset, /* current offset */
+    uintptr_t FileDataID,
+    uintptr_t &Line
+  ){
+    auto &f = FileDataList[FileDataID];
+
+    auto &file_input_size = f.orig_s;
+    auto &orig_p = f.orig_p;
+
+    #define set_SimplifyFile_Info
+    #include "SimplifyFile1.h"
+
+    Line += set_LineInformationPlus;
+  }
+
+  /* syncs stack and heap expand */
+  void ExpandSync(){
+    ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
+  }
+
+  void print_TraceDataID(uintptr_t DataID, uintptr_t Offset){
     if(DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
       uintptr_t FileDataID = DataID ^ (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
-
       auto &f = FileDataList[FileDataID];
+
+      uintptr_t LineIndex;
+      GetInfoFromFile(Offset - (uintptr_t)f.p, FileDataID, LineIndex);
+
       printstderr(
         "In file included from %s:%u\n",
         f.FullPath.c_str(),
-        #if set_LineInformation
-          LineIndex
-        #else
-          (uintptr_t)et.i - (uintptr_t)f.p
-        #endif
+        LineIndex
       );
     }
     else{
@@ -302,23 +320,18 @@ struct pile_t{
   }
   void print_TraceDataLink(uintptr_t TraceCount, DataLink_t::nr_t dlid){
     while(TraceCount--){
-      print_TraceDataID(DataLink[dlid].DataID, DataLink[dlid].LineIndex);
+      print_TraceDataID(DataLink[dlid].DataID, DataLink[dlid].Offset);
       dlid = DataLink[dlid].dlid;
     }
   }
   void print_ExpandTrace(){
-    /* for stack heap sync */
-    ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
+    ExpandSync();
 
     for(uintptr_t i = ExpandTrace.Usage(); i-- > 1;){
       auto &et = ExpandTrace[i];
       print_TraceDataID(
         et.DataID,
-        #if set_LineInformation
-          et.LineIndex
-        #else
-          (uintptr_t)et.i
-        #endif
+        (uintptr_t)et.i
       );
     }
   }
@@ -358,10 +371,6 @@ struct pile_t{
     auto &fd = FileDataList[FileDataID];
     CurrentExpand.s = &fd.p[fd.s];
     CurrentExpand.i = fd.p;
-
-    #if set_LineInformation
-      CurrentExpand.LineIndex = 0;
-    #endif
   }
 
   void ExpandTraceFileAdd(
@@ -369,7 +378,7 @@ struct pile_t{
     bool Relative,
     uintptr_t PathSize
   ){
-    ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
+    ExpandSync();
 
     ExpandTrace.inc();
 
@@ -450,35 +459,36 @@ struct pile_t{
       IO_fstat(&fd_input, &st);
 
       auto file_input_size = IO_stat_GetSizeInBytes(&st);
-
-      auto p = (uint8_t *)malloc(file_input_size + 1); /* + 1 for endline in end */
-      uintptr_t p_size = 0;
-      {
-        auto tp = (uint8_t *)malloc(file_input_size);
-
-        if(FS_file_read(
-          &file_input,
-          tp,
-          file_input_size
-        ) != file_input_size){
-          __abort();
-        }
-
-        FS_file_close(&file_input);
-
-        if(file_input_size){
-          #include "SimplifyFile1.h"
-        }
-
-        free(tp);
+      if(file_input_size > (uintptr_t)-1){
+        __abort();
       }
+
+      auto p = A_resize(NULL, file_input_size + 1); /* + 1 for endline in end */
+      uintptr_t p_size = 0;
+      auto orig_p = (uint8_t *)IO_mmap(
+        NULL,
+        file_input_size,
+        PROT_READ,
+        MAP_SHARED,
+        fd_input.fd, 
+        0
+      );
+      if((sintptr_t)orig_p < 0 && (sintptr_t)orig_p > -2048){
+        __abort();
+      }
+
+      FS_file_close(&file_input);
+
+      #include "SimplifyFile1.h"
 
       if(!p_size || p[p_size - 1] != '\n'){
         p[p_size++] = '\n';
       }
-      p = (uint8_t *)realloc(p, p_size);
+      p = A_resize(p, p_size);
 
       FileDataList[FileDataList.NewNode()] = {
+        .orig_s = (uintptr_t)file_input_size,
+        .orig_p = orig_p,
         .s = p_size,
         .p = p,
         .FullPath = abspath,
@@ -496,7 +506,7 @@ struct pile_t{
   }
 
   void _ExpandTraceDefineAdd(uintptr_t DataID, const uint8_t *i, uintptr_t size){
-    ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
+    ExpandSync();
 
     ExpandTrace.inc();
 
@@ -574,16 +584,8 @@ struct pile_t{
     }
     else{
       CurrentExpand.i++;
-      if(CurrentExpand.i != CurrentExpand.s){
-        #if set_LineInformation
-          CurrentExpand.LineIndex++;
-        #endif
-      }
-      else while(1){
-        Deexpand();
-        if(CurrentExpand.i != CurrentExpand.s){
-          break;
-        }
+      while(CurrentExpand.i == CurrentExpand.s){
+        Deexpand(); /* TOOD we already know its a file. why not call deexpand file? */
       }
     }
   }
