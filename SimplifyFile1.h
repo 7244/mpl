@@ -108,26 +108,45 @@ if(file_input_size){
     }
     else if(orig_p[i] == '/' && orig_p[i + 1] == '*' && !InsideQuote){
       i += 2;
-      while(EXPECT(i < orig_size, true)){
-        if(orig_p[i] == '\n'){
-          #ifdef set_SimplifyFile_Info
-            Line++;
-          #endif
-          i += 1;
-          if(InsidePreprocessor){
-            p[ps.operator()<1>()] = '\n';
+      if(InsidePreprocessor){
+        while(EXPECT(i < orig_size, true)){
+          if(orig_p[i] == '\n'){
+            #ifdef set_SimplifyFile_Info
+              Line++;
+            #endif
+            i += 1;
+            if(orig_p[i - 2] != '\\'){
+              p[ps.operator()<1>()] = '\n';
+              InsidePreprocessor = false;
+              break;
+            }
           }
-          InsidePreprocessor = false;
+          else if(orig_p[i] == '*'){
+            ++i;
+            if(orig_p[i] == '/'){
+              ++i;
+              goto gt_end;
+            }
+          }
+          else{
+            ++i;
+          }
         }
-        else if(orig_p[i] == '\\' && orig_p[i + 1] == '\n'){
-          #ifdef set_SimplifyFile_Info
+      }
+      while(EXPECT(i < orig_size, true)){
+        if(0);
+        #ifdef set_SimplifyFile_Info
+          else if(orig_p[i] == '\n'){
             Line++;
-          #endif
-          i += 2;
-        }
-        else if(orig_p[i] == '*' && orig_p[i + 1] == '/'){
-          i += 2;
-          break;
+            i += 1;
+          }
+        #endif
+        else if(orig_p[i] == '*'){
+          ++i;
+          if(orig_p[i] == '/'){
+            ++i;
+            break;
+          }
         }
         else{
           ++i;
@@ -141,6 +160,8 @@ if(file_input_size){
       }
       p[ps.operator()<1>()] = orig_p[i++];
     }
+
+    gt_end:;
   }
 
   if(orig_p[orig_size] != '\\'){

@@ -1245,16 +1245,7 @@ std::string_view SimplifyType(uintptr_t &TypeID){
           #endif
         }
       }
-      else if(_char){
-        goto gt_signed;
-      }
-      else if(_short){
-        goto gt_signed;
-      }
-      else if(_int){
-        goto gt_signed;
-      }
-      else if(_long){
+      else if(_char | _short | _int | _long){
         goto gt_signed;
       }
       else{
