@@ -15,7 +15,10 @@ void SkipEmptyInLine(){
   }
 }
 
+/* automaticly expands identifier too */
 void SkipTillCode(){
+  gt_begin:
+
   while(1){
     if(gc() == '\n'){
       ic_endline();
@@ -24,6 +27,28 @@ void SkipTillCode(){
       ic_unsafe();
     }
     else{
+      if(STR_ischar_char(gc()) || gc() == '_'){
+        auto t = CurrentExpand.i + 1;
+        while(STR_ischar_char(*t) || STR_ischar_digit(*t) || *t == '_'){
+          t++;
+        }
+        auto iden = std::string_view(
+          (const char *)CurrentExpand.i,
+          (uintptr_t)t - (uintptr_t)CurrentExpand.i
+        );
+        auto ddmid = DefineDataMap.find(iden);
+        if(ddmid != DefineDataMap.end()){
+          auto ddid = ddmid->second;
+          auto &d = DefineDataList[ddid];
+          if(d.isfunc){
+            /* need to search parenthese */
+            __abort();
+          }
+          CurrentExpand.i = t;
+          ExpandPreprocessorIdentifier_ddid(ddmid->second);
+          goto gt_begin;
+        }
+      }
       break;
     }
   }
@@ -52,7 +77,9 @@ enum class WordType : uint8_t{
   PreprocessorStart,
   Identifier
 };
-WordType IdentifyWordAndSkip(){
+WordType SkipAndIdentify(){
+  SkipTillCode();
+
   if(gc() == '#'){
 
     ic_unsafe();
@@ -1113,18 +1140,16 @@ void PreprocessorIf(
       PreprocessorScope.back().DidRan = true;
       return;
     }
-
-    Type = SkipToNextPreprocessorScopeExit();
-    if(Type == 1){ /* else if */
-      ConditionType = 2;
-    }
-    else if(Type == 2){ /* else */
-      ConditionType = 3;
-    }
-    goto gt_begin;
   }
 
-  SkipCurrentLine();
+  Type = SkipToNextPreprocessorScopeExit();
+  if(Type == 1){ /* else if */
+    ConditionType = 2;
+  }
+  else if(Type == 2){ /* else */
+    ConditionType = 3;
+  }
+  goto gt_begin;
 }
 
 /* returns identifier that it didnt understand */
@@ -1331,20 +1356,7 @@ std::string_view SimplifyType(uintptr_t &TypeID){
 
 bool Compile(){
   while(1){
-
-    while(1){
-      if(ischar_empty()){
-        ic_unsafe();
-      }
-      else if(gc() == '\n'){
-        ic_endline();
-      }
-      else{
-        break;
-      }
-    }
-
-    auto wt = IdentifyWordAndSkip();
+    auto wt = SkipAndIdentify();
 
     switch(wt){
       case WordType::PreprocessorStart:{
@@ -1487,11 +1499,7 @@ bool Compile(){
       case WordType::Identifier:{
         auto iden = GetIdentifier();
 
-        auto ddmid = DefineDataMap.find(iden);
-        if(ddmid != DefineDataMap.end()){
-          ExpandPreprocessorIdentifier_ddid(ddmid->second);
-        }
-        else if(!iden.compare("void")){
+        if(!iden.compare("void")){
           print_ExpandTrace();
           __abort();
         }
