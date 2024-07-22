@@ -1420,7 +1420,7 @@ bool Compile(){
             d.DataLinkID = DataLink.NewNode();
             DataLink[d.DataLinkID].dlid = tdlid;
             DataLink[d.DataLinkID].DataID = ExpandTrace[eti].DataID;
-            DataLink[d.DataLinkID].Offset = (uintptr_t)ExpandTrace[eti].i;
+            DataLink[d.DataLinkID].Offset = ExpandTrace[eti].i;
           }
 
           d.isfunc = false;

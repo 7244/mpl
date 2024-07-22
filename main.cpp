@@ -56,6 +56,7 @@ struct pile_t{
 
   std::string filename;
 
+  /* INFO rdata stands for raw data, sdata stands for simplified data */
   #define BLL_set_prefix FileDataList
   #define BLL_set_Link 0
   #define BLL_set_Recycle 0
@@ -66,10 +67,10 @@ struct pile_t{
   #define BLL_set_AreWeInsideStruct 1
   #define BLL_set_NodeData \
     bool pragma_once = false; \
-    uintptr_t orig_s; \
-    uint8_t *orig_p; \
-    uintptr_t s; \
-    uint8_t *p; \
+    const uint8_t *rdatabegin; \
+    const uint8_t *rdataend; \
+    const uint8_t *sdatabegin; \
+    const uint8_t *sdataend; \
     std::string FullPath; \
     uintptr_t FileNameSize;
   #define BLL_set_type_node uintptr_t
@@ -86,7 +87,7 @@ struct pile_t{
     #define BLL_set_NodeData \
       DataLink_NodeReference_t dlid; \
       uintptr_t DataID; \
-      uintptr_t Offset;
+      const uint8_t *Offset;
     #define BLL_set_type_node uintptr_t
     #include <BLL/BLL.h>
     DataLink_t DataLink;
@@ -260,14 +261,15 @@ struct pile_t{
   }
 
   void GetInfoFromFile(
-    uintptr_t coffset, /* current offset */
+    const uint8_t * const coffset, /* current offset */
     uintptr_t FileDataID,
     uintptr_t &Line
   ){
     auto &f = FileDataList[FileDataID];
 
-    auto &file_input_size = f.orig_s;
-    auto &orig_p = f.orig_p;
+    const uint8_t *rdata = f.rdatabegin;
+    const uint8_t *rdataend = f.rdataend;
+    const uint8_t *sdatabegin = f.sdatabegin;
 
     #define set_SimplifyFile_Info
     #include "SimplifyFile1.h"
@@ -280,13 +282,13 @@ struct pile_t{
     ExpandTrace[ExpandTrace.Usage() - 1] = CurrentExpand;
   }
 
-  void print_TraceDataID(uintptr_t DataID, uintptr_t Offset){
+  void print_TraceDataID(uintptr_t DataID, const uint8_t * const Offset){
     if(DataID & (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1){
       uintptr_t FileDataID = DataID ^ (uintptr_t)1 << sizeof(uintptr_t) * 8 - 1;
       auto &f = FileDataList[FileDataID];
 
       uintptr_t LineIndex;
-      GetInfoFromFile(Offset - (uintptr_t)f.p, FileDataID, LineIndex);
+      GetInfoFromFile(Offset, FileDataID, LineIndex);
 
       printstderr(
         "In file included from %s:%u\n",
@@ -331,7 +333,7 @@ struct pile_t{
       auto &et = ExpandTrace[i];
       print_TraceDataID(
         et.DataID,
-        (uintptr_t)et.i
+        et.i
       );
     }
   }
@@ -369,8 +371,8 @@ struct pile_t{
     CurrentExpand.file.PathSize = PathSize;
 
     auto &fd = FileDataList[FileDataID];
-    CurrentExpand.s = &fd.p[fd.s];
-    CurrentExpand.i = fd.p;
+    CurrentExpand.s = fd.sdataend;
+    CurrentExpand.i = fd.sdatabegin;
   }
 
   void ExpandTraceFileAdd(
@@ -460,12 +462,11 @@ struct pile_t{
 
       auto file_input_size = IO_stat_GetSizeInBytes(&st);
       if(file_input_size > (uintptr_t)-1){
+        /* file size is bigger than what we can map to memory */
         __abort();
       }
 
-      auto p = A_resize(NULL, file_input_size + 1); /* + 1 for endline in end */
-      uintptr_t p_size = 0;
-      auto orig_p = (uint8_t *)IO_mmap(
+      auto rdatabegin = (uint8_t *)IO_mmap(
         NULL,
         file_input_size,
         PROT_READ,
@@ -473,24 +474,33 @@ struct pile_t{
         fd_input.fd, 
         0
       );
-      if((sintptr_t)orig_p < 0 && (sintptr_t)orig_p > -2048){
+      uint8_t *rdataend = &rdatabegin[file_input_size];
+      if((sintptr_t)rdatabegin < 0 && (sintptr_t)rdatabegin > -2048){
         __abort();
       }
 
       FS_file_close(&file_input);
 
-      #include "SimplifyFile1.h"
+      auto sdatabegin = A_resize(NULL, file_input_size + 1); /* + 1 for endline in end */
+      uint8_t *sdataend;
 
-      if(!p_size || p[p_size - 1] != '\n'){
-        p[p_size++] = '\n';
+      {
+        auto rdata = rdatabegin;
+        auto sdata = sdatabegin;
+        #include "SimplifyFile1.h"
+        sdataend = sdata;
       }
-      p = A_resize(p, p_size);
+
+      if(sdatabegin == sdataend || *(sdataend - 1) != '\n'){
+        *sdataend++ = '\n';
+      }
+      sdatabegin = A_resize(sdatabegin, sdataend - sdatabegin);
 
       FileDataList[FileDataList.NewNode()] = {
-        .orig_s = (uintptr_t)file_input_size,
-        .orig_p = orig_p,
-        .s = p_size,
-        .p = p,
+        .rdatabegin = rdatabegin,
+        .rdataend = rdataend,
+        .sdatabegin = sdatabegin,
+        .sdataend = sdataend,
         .FullPath = abspath,
         .FileNameSize = FileNameSize
       };
@@ -704,10 +714,17 @@ int main(int argc, const char **argv){
   /* ddid 0 is for stack defines */
   pile.DefineDataList.NewNode();
 
-  pile.FileDataList[pile.FileDataList.NewNode()] = {
-    .s = 6,
-    .p = (uint8_t *)"\n#eof\n"
-  };
+  const uint8_t eof_string[5] = {'#','e','o','f','\n'};
+  {
+    auto &f = pile.FileDataList[pile.FileDataList.NewNode()];
+
+    f.rdatabegin = eof_string;
+    f.rdataend = eof_string + sizeof(eof_string);
+    f.sdatabegin = eof_string;
+    f.sdataend = eof_string + sizeof(eof_string);
+    f.FullPath = "";
+    f.FileNameSize = 0;
+  }
   pile._ExpandTraceFileSet(0, true, 0);
   pile.ExpandTrace.inc();
 

@@ -1,171 +1,184 @@
-if(file_input_size){
+auto rdatato = rdataend - 1;
+
+if((uintptr_t)rdatato > (uintptr_t)rdata){
   bool InsidePreprocessor = false;
   bool InsideQuote = false;
 
   /* dont make this bool. x86 assembly has small and fast `inc` instruction. */
   uintptr_t SpaceCombo = 0;
 
-  uintptr_t LastEndLine = 0;
-
-  uintptr_t i = 0;
-
   #ifdef set_SimplifyFile_Info
     Line = 0;
 
-    struct p_t{
-      uint8_t p;
-      uint8_t &operator[](uintptr_t){
-        return p;
+    struct sdata_element_t{
+      void operator=(const uint8_t){}
+    };
+    struct sdata_t{
+      const uint8_t *ptr;
+      sdata_element_t operator*(){
+        return {};
       }
-    }p;
-    uintptr_t p_size = 0;
+      bool operator!=(const sdata_t &){
+        return false;
+      }
+    }sdata = {
+      .ptr = sdatabegin
+    };
   #endif
-  auto ps = [&]<uintptr_t plus>() -> uintptr_t {
-    auto r = p_size;
-    if constexpr(plus != 0){
-      p_size += plus;
-      #ifdef set_SimplifyFile_Info
-        if(p_size == coffset){
-          i = file_input_size;
-        }
-      #endif
-    }
-    return r;
+  auto spp = [&](){
+    #ifdef set_SimplifyFile_Info
+      sdata.ptr++;
+      if(sdata.ptr == coffset){
+        rdata = rdatato;
+      }
+    #else
+      sdata++;
+    #endif
   };
 
-  uintptr_t orig_size = file_input_size - 1;
-  while(EXPECT(i < orig_size, true)){
-    if(orig_p[i] == '\\' && orig_p[i + 1] == '\n'){
+  auto LastEndLine = sdata;
+
+  while(EXPECT(rdata < rdatato, true)){
+    if(rdata[0] == '\\' && rdata[1] == '\n'){
       #ifdef set_SimplifyFile_Info
         Line++;
       #endif
-      i += 2;
+      rdata += 2;
     }
-    else if(orig_p[i] == '\r'){
-      i += 1;
+    else if(rdata[0] == '\r'){
+      rdata += 1;
     }
-    else if(orig_p[i] == '#' && !InsidePreprocessor){
+    else if(rdata[0] == '#' && !InsidePreprocessor){
       InsidePreprocessor = true;
       SpaceCombo = 0;
-      p[ps.operator()<1>()] = orig_p[i++];
+      *sdata = *rdata++;
+      spp();
     }
-    else if(orig_p[i] == '\n'){
+    else if(rdata[0] == '\n'){
       #ifdef set_SimplifyFile_Info
         Line++;
       #endif
       if(InsidePreprocessor){
-        p[ps.operator()<1>()] = orig_p[i++];
-        LastEndLine = p_size;
+        *sdata = *rdata++;
+        spp();
+        LastEndLine = sdata;
         InsidePreprocessor = false;
       }
       else{
-        while(orig_p[++i] == ' ' || orig_p[i] == '\t');
-        InsidePreprocessor = orig_p[i] == '#';
-        if(InsidePreprocessor && LastEndLine != p_size){
-          p[ps.operator()<1>()] = '\n';
-          LastEndLine = p_size;
+        while(*++rdata == ' ' || rdata[0] == '\t');
+        InsidePreprocessor = rdata[0] == '#';
+        if(InsidePreprocessor && LastEndLine != sdata){
+          *sdata = '\n';
+          spp();
+          LastEndLine = sdata;
         }
       }
       SpaceCombo = 0;
     }
-    else if(orig_p[i] == '"' && !InsidePreprocessor){
+    else if(rdata[0] == '"' && !InsidePreprocessor){
       if(SpaceCombo){
-        p[ps.operator()<1>()] = ' ';
+        *sdata = ' ';
+        spp();
         SpaceCombo = 0;
       }
-      p[ps.operator()<1>()] = orig_p[i++];
+      *sdata = *rdata++;
+      spp();
       InsideQuote ^= 1;
     }
-    else if(orig_p[i] == '\t' && !InsideQuote){
+    else if(rdata[0] == '\t' && !InsideQuote){
       SpaceCombo++;
-      i += 1;
+      rdata += 1;
     }
-    else if(orig_p[i] == ' ' && !InsideQuote){
+    else if(rdata[0] == ' ' && !InsideQuote){
       SpaceCombo++;
-      i += 1;
+      rdata += 1;
     }
-    else if(orig_p[i] == '/' && orig_p[i + 1] == '/' && !InsideQuote){
+    else if(rdata[0] == '/' && rdata[1] == '/' && !InsideQuote){
       InsidePreprocessor = false;
-      i += 2;
-      while(EXPECT(i < orig_size, true)){
-        if(orig_p[i] == '\\' && orig_p[i + 1] == '\n'){
+      rdata += 2;
+      while(EXPECT(rdata < rdatato, true)){
+        if(rdata[0] == '\\' && rdata[1] == '\n'){
           #ifdef set_SimplifyFile_Info
             Line++;
           #endif
-          i += 2;
+          rdata += 2;
         }
-        else if(orig_p[i] == '\n'){
+        else if(rdata[0] == '\n'){
           #ifdef set_SimplifyFile_Info
             Line++;
           #endif
-          ++i;
+          ++rdata;
           break;
         }
         else{
-          ++i;
+          ++rdata;
         }
       }
     }
-    else if(orig_p[i] == '/' && orig_p[i + 1] == '*' && !InsideQuote){
-      i += 2;
+    else if(rdata[0] == '/' && rdata[1] == '*' && !InsideQuote){
+      rdata += 2;
       if(InsidePreprocessor){
-        while(EXPECT(i < orig_size, true)){
-          if(orig_p[i] == '\n'){
+        while(EXPECT(rdata < rdatato, true)){
+          if(rdata[0] == '\n'){
             #ifdef set_SimplifyFile_Info
               Line++;
             #endif
-            i += 1;
-            if(orig_p[i - 2] != '\\'){
-              p[ps.operator()<1>()] = '\n';
+            rdata += 1;
+            if(*(rdata - 2) != '\\'){
+              *sdata = '\n';
+              spp();
               InsidePreprocessor = false;
               break;
             }
           }
-          else if(orig_p[i] == '*'){
-            ++i;
-            if(orig_p[i] == '/'){
-              ++i;
+          else if(rdata[0] == '*'){
+            ++rdata;
+            if(rdata[0] == '/'){
+              ++rdata;
               goto gt_end;
             }
           }
           else{
-            ++i;
+            ++rdata;
           }
         }
       }
-      while(EXPECT(i < orig_size, true)){
+      while(EXPECT(rdata < rdatato, true)){
         if(0);
         #ifdef set_SimplifyFile_Info
-          else if(orig_p[i] == '\n'){
+          else if(rdata[0] == '\n'){
             Line++;
-            i += 1;
+            rdata += 1;
           }
         #endif
-        else if(orig_p[i] == '*'){
-          ++i;
-          if(orig_p[i] == '/'){
-            ++i;
+        else if(rdata[0] == '*'){
+          ++rdata;
+          if(rdata[0] == '/'){
+            ++rdata;
             break;
           }
         }
         else{
-          ++i;
+          ++rdata;
         }
       }
     }
     else{
       if(SpaceCombo){
-        p[ps.operator()<1>()] = ' ';
+        *sdata = ' ';
+        spp();
         SpaceCombo = 0;
       }
-      p[ps.operator()<1>()] = orig_p[i++];
+      *sdata = *rdata++;
+      spp();
     }
 
     gt_end:;
   }
 
-  if(orig_p[orig_size] != '\\'){
-    p[ps.operator()<1>()] = orig_p[orig_size];
+  if(*rdatato != '\\'){
+    *sdata = *rdatato;
+    spp();
   }
   else{
     /* tcc gives `error: declaration expected` */
