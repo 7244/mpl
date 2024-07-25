@@ -193,69 +193,6 @@ struct pile_t{
   #include <BLL/BLL.h>
   ExpandTrace_t ExpandTrace;
 
-  enum class SpecialTypeEnum : uintptr_t{
-    _void,
-    _uint64_t,
-    _sint64_t,
-    _uint32_t,
-    _sint32_t,
-    _uint16_t,
-    _sint16_t,
-    _uint8_t,
-    _sint8_t,
-    _bool,
-    l,
-    #if SYSTEM_BIT == 64
-      _uintptr_t = _uint64_t,
-      _sintptr_t = _sint64_t
-    #elif SYSTEM_BIT == 32
-      _uintptr_t = _uint32_t,
-      _sintptr_t = _sint32_t
-    #else
-      #error ?
-    #endif
-  };
-  struct TypeData_t{
-    uintptr_t filler;
-  };
-  #define BLL_set_prefix TypeList
-  #define BLL_set_Link 0
-  #define BLL_set_Recycle 0
-  #define BLL_set_IntegerNR 1
-  #define BLL_set_CPP_ConstructDestruct 1
-  #define BLL_set_CPP_Node_ConstructDestruct 1
-  #define BLL_set_AreWeInsideStruct 1
-  #define BLL_set_NodeDataType TypeData_t
-  #define BLL_set_type_node uintptr_t
-  #include <BLL/BLL.h>
-  TypeList_t TypeList;
-
-  std::map<std::string_view, uintptr_t> IdentifierMap;
-
-  struct TypeInit_t{
-    TypeInit_t(){
-      auto pile = OFFSETLESS(this, pile_t, TypeInit);
-
-      for(auto l = (uintptr_t)SpecialTypeEnum::l; l--;){
-        pile->TypeList.inc();
-      }
-
-      pile->IdentifierMap["void"] = (uintptr_t)SpecialTypeEnum::_void;
-      pile->IdentifierMap["uint64_t"] = (uintptr_t)SpecialTypeEnum::_uint64_t;
-      pile->IdentifierMap["sint64_t"] = (uintptr_t)SpecialTypeEnum::_sint64_t;
-      pile->IdentifierMap["uint32_t"] = (uintptr_t)SpecialTypeEnum::_uint32_t;
-      pile->IdentifierMap["sint32_t"] = (uintptr_t)SpecialTypeEnum::_sint32_t;
-      pile->IdentifierMap["uint16_t"] = (uintptr_t)SpecialTypeEnum::_uint16_t;
-      pile->IdentifierMap["sint16_t"] = (uintptr_t)SpecialTypeEnum::_sint16_t;
-      pile->IdentifierMap["uint8_t"] = (uintptr_t)SpecialTypeEnum::_uint8_t;
-      pile->IdentifierMap["sint8_t"] = (uintptr_t)SpecialTypeEnum::_sint8_t;
-      pile->IdentifierMap["bool"] = (uintptr_t)SpecialTypeEnum::_bool;
-
-      pile->IdentifierMap["uintptr_t"] = (uintptr_t)SpecialTypeEnum::_uintptr_t;
-      pile->IdentifierMap["sintptr_t"] = (uintptr_t)SpecialTypeEnum::_sintptr_t;
-    }
-  }TypeInit;
-
   bool &GetPragmaOnce(){
     return FileDataList[CurrentExpand.DataID].pragma_once;
   }
@@ -346,6 +283,78 @@ struct pile_t{
     printwi(__VA_ARGS__) \
     PR_exit(1); \
     __unreachable();
+
+  enum class SpecialTypeEnum : uintptr_t{
+    _void,
+    _uint64_t,
+    _sint64_t,
+    _uint32_t,
+    _sint32_t,
+    _uint16_t,
+    _sint16_t,
+    _uint8_t,
+    _sint8_t,
+    _bool,
+    #if SYSTEM_BIT == 64
+      _uintptr_t = _uint64_t,
+      _sintptr_t = _sint64_t
+    #elif SYSTEM_BIT == 32
+      _uintptr_t = _uint32_t,
+      _sintptr_t = _sint32_t
+    #else
+      #error ?
+    #endif
+  };
+  struct TypeData_t{
+    uintptr_t refc = 0;
+  };
+  #define BLL_set_prefix TypeList
+  #define BLL_set_Link 0
+  #define BLL_set_Recycle 0
+  #define BLL_set_IntegerNR 1
+  #define BLL_set_CPP_ConstructDestruct 1
+  #define BLL_set_CPP_Node_ConstructDestruct 1
+  #define BLL_set_AreWeInsideStruct 1
+  #define BLL_set_NodeDataType TypeData_t
+  #define BLL_set_type_node uintptr_t
+  #include <BLL/BLL.h>
+  TypeList_t TypeList;
+
+  std::map<std::string_view, uintptr_t> IdentifierMap;
+  auto &IdentifierMapGet(auto p){
+    auto it = IdentifierMap.find(p);
+    if(EXPECT(it == IdentifierMap.end(), false)){
+      errprint_exit("failed to find type %.*s", (uintptr_t)p.size(), p.data());
+    }
+    return it->second;
+  }
+
+  struct TypeInit_t{
+    TypeInit_t(){
+      auto pile = OFFSETLESS(this, pile_t, TypeInit);
+
+      #define d(name) \
+        pile->TypeList.inc(); \
+        pile->TypeList[pile->TypeList.Usage() - 1].refc++; \
+        pile->IdentifierMap[STR(name)] = (uintptr_t)SpecialTypeEnum::CONCAT(_,name);
+
+      d(void)
+      d(uint64_t)
+      d(sint64_t)
+      d(uint32_t)
+      d(sint32_t)
+      d(uint16_t)
+      d(sint16_t)
+      d(uint8_t)
+      d(sint8_t)
+      d(bool)
+
+      d(uintptr_t)
+      d(sintptr_t)
+
+      #undef d
+    }
+  }TypeInit;
 
   std::string realpath(std::string p){
     auto v = ::realpath(p.c_str(), NULL);

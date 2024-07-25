@@ -73,30 +73,6 @@ void ReadLineBeautifully0(const uint8_t **p, const uint8_t **s){
   }
 }
 
-enum class WordType : uint8_t{
-  PreprocessorStart,
-  Identifier
-};
-WordType SkipAndIdentify(){
-  SkipTillCode();
-
-  if(gc() == '#'){
-
-    ic_unsafe();
-    SkipEmptyInLine();
-
-    return WordType::PreprocessorStart;
-  }
-  else if(STR_ischar_char(gc()) || gc() == '_'){
-    return WordType::Identifier;
-  }
-  else [[unlikely]] {
-    errprint_exit("cant identify %lx %c", gc(), gc());
-  }
-
-  __unreachable();
-}
-
 enum class PreprocessorParseType : uint8_t{
   endline,
   parentheseopen,
@@ -1320,11 +1296,25 @@ std::string_view SimplifyType(uintptr_t &TypeID){
             return iden;
           }
           /* lets resolve iden */
-          auto it = IdentifierMap.find(iden);
-          if(EXPECT(it == IdentifierMap.end(), false)){
-            errprint_exit("failed to find type %.*s", (uintptr_t)iden.size(), iden.data());
+          if(!iden.compare("struct")){
+            std::string TypeName;
+            while(1){
+              SkipTillCode();
+              if(gc() == '{'){
+                __abort();
+              }
+              else if(!TypeName.size()){
+                TypeName = GetIdentifier();
+              }
+              else{
+                TypeID = IdentifierMapGet(TypeName);
+                break;
+              }
+            }
           }
-          TypeID = it->second;
+          else{
+            TypeID = IdentifierMapGet(iden);
+          }
           return std::string_view();
         }
       }
@@ -1347,332 +1337,332 @@ std::string_view SimplifyType(uintptr_t &TypeID){
 
 bool Compile(){
   while(1){
-    auto wt = SkipAndIdentify();
+    SkipTillCode();
+    if(gc() == '#'){
+      ic_unsafe();
+      SkipEmptyInLine();
 
-    switch(wt){
-      case WordType::PreprocessorStart:{
-        auto Identifier = GetIdentifier();
-        if(!Identifier.compare("eof")){
-          return 0;
-        }
-        else if(!Identifier.compare("error")){
-          const uint8_t *p;
-          const uint8_t *s;
-          ReadLineBeautifully0(&p, &s);
-          errprint_exit("error: #error %.*s", (uintptr_t)s - (uintptr_t)p, p);
-          ic_endline();
-        }
-        else if(!Identifier.compare("warning")){
-          const uint8_t *p;
-          const uint8_t *s;
-          ReadLineBeautifully0(&p, &s);
-          printwi("warning: #warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
-          ic_endline();
-        }
-        else if(!Identifier.compare("include")){
-          SkipEmptyInLine();
-          auto ip = GetIncludePath();
-          ExpandFile(ip.Relative, ip.Name);
-        }
-        else if(!Identifier.compare("pragma")){
-          SkipEmptyInLine();
-          auto piden = GetIdentifier();
-          if(!piden.compare("once")){
-            if(!GetPragmaOnce()){
-              GetPragmaOnce() = true;
-            }
-            else{
-              _DeexpandFile();
-              _Deexpand();
-            }
+      auto Identifier = GetIdentifier();
+      if(!Identifier.compare("eof")){
+        return 0;
+      }
+      else if(!Identifier.compare("error")){
+        const uint8_t *p;
+        const uint8_t *s;
+        ReadLineBeautifully0(&p, &s);
+        errprint_exit("error: #error %.*s", (uintptr_t)s - (uintptr_t)p, p);
+        ic_endline();
+      }
+      else if(!Identifier.compare("warning")){
+        const uint8_t *p;
+        const uint8_t *s;
+        ReadLineBeautifully0(&p, &s);
+        printwi("warning: #warning %.*s", (uintptr_t)s - (uintptr_t)p, p);
+        ic_endline();
+      }
+      else if(!Identifier.compare("include")){
+        SkipEmptyInLine();
+        auto ip = GetIncludePath();
+        ExpandFile(ip.Relative, ip.Name);
+      }
+      else if(!Identifier.compare("pragma")){
+        SkipEmptyInLine();
+        auto piden = GetIdentifier();
+        if(!piden.compare("once")){
+          if(!GetPragmaOnce()){
+            GetPragmaOnce() = true;
           }
           else{
-            __abort();
-          }
-        }
-        else if(!Identifier.compare("define")){
-          SkipEmptyInLine();
-          auto defiden = GetIdentifier();
-
-          auto dmid = DefineDataMap.find(defiden);
-          if(dmid != DefineDataMap.end()){
-            if(settings.Wmacro_redefined){
-              printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
-              printstderr("previously defined at\n");
-              auto &dd = DefineDataList[dmid->second];
-              print_TraceDataLink(dd.TraceCount, dd.DataLinkID);
-              printstderr("\n");
-            }
-            DefineDataMap.erase(defiden);
-          }
-
-          auto ddid = DefineDataList.NewNode();
-          auto &d = DefineDataList[ddid];
-
-          ExpandSync();
-          #if __sanit
-            d.DataLinkID.sic();
-          #endif
-          d.TraceCount = 0;
-          for(uintptr_t eti = 0; ++eti < ExpandTrace.Usage();){
-            d.TraceCount++;
-            auto tdlid = d.DataLinkID;
-            d.DataLinkID = DataLink.NewNode();
-            DataLink[d.DataLinkID].dlid = tdlid;
-            DataLink[d.DataLinkID].DataID = ExpandTrace[eti].DataID;
-            DataLink[d.DataLinkID].Offset = ExpandTrace[eti].i;
-          }
-
-          d.isfunc = false;
-          if(gc() == '('){
-            d.isfunc = true;
-            ic_unsafe();
-            GetDefineParams(d.Inputs, d.va_args);
-          }
-          else if(ischar_empty()){
-            ic_unsafe();
-          }
-          else if(gc() != '\n'){
-            __abort();
-          }
-
-          SkipEmptyInLine();
-          d.op = &gc();
-          while(gc() != '\n'){
-            ic_unsafe();
-          }
-          d.os = &gc();
-          ic();
-
-          DefineDataMap[defiden] = ddid;
-        }
-        else if(!Identifier.compare("ifdef")){
-          PreprocessorIf(0, 0);
-        }
-        else if(!Identifier.compare("ifndef")){
-          PreprocessorIf(0, 1);
-        }
-        else if(!Identifier.compare("if")){
-          PreprocessorIf(0, 2);
-        }
-        else if(!Identifier.compare("elif")){
-          PreprocessorIf(1, 2);
-        }
-        else if(!Identifier.compare("else")){
-          PreprocessorIf(2, 3);
-        }
-        else if(!Identifier.compare("endif")){
-          PreprocessorIf(3, 0);
-        }
-        else if(!Identifier.compare("undef")){
-          SkipEmptyInLine();
-          auto defiden = GetIdentifier();
-          SkipCurrentEmptyLine();
-          if(DefineDataMap.find(defiden) == DefineDataMap.end()){
-            if(settings.Wmacro_not_defined){
-              printwi("warning, Wmacro-not-defined %.*s",
-                (uintptr_t)defiden.size(), defiden.data()
-              );
-            }
-          }
-          else{
-            DefineDataMap.erase(defiden);
+            _DeexpandFile();
+            _Deexpand();
           }
         }
         else{
-          printwi("unknown preprocessor identifier. %.*s",
-            (uintptr_t)Identifier.size(), Identifier.data()
-          );
           __abort();
         }
-        break;
       }
-      case WordType::Identifier:{
-        auto iden = GetIdentifier();
+      else if(!Identifier.compare("define")){
+        SkipEmptyInLine();
+        auto defiden = GetIdentifier();
 
-        if(!iden.compare("void")){
-          print_ExpandTrace();
-          __abort();
+        auto dmid = DefineDataMap.find(defiden);
+        if(dmid != DefineDataMap.end()){
+          if(settings.Wmacro_redefined){
+            printwi("macro is redefined \"%.*s\"", (uintptr_t)defiden.size(), defiden.data());
+            printstderr("previously defined at\n");
+            auto &dd = DefineDataList[dmid->second];
+            print_TraceDataLink(dd.TraceCount, dd.DataLinkID);
+            printstderr("\n");
+          }
+          DefineDataMap.erase(defiden);
         }
-        #if set_support_c99
-          else if(!iden.compare("unsigned")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("signed")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("auto")){
-            /* useless keyword */
-          }
+
+        auto ddid = DefineDataList.NewNode();
+        auto &d = DefineDataList[ddid];
+
+        ExpandSync();
+        #if __sanit
+          d.DataLinkID.sic();
         #endif
-        else if(!iden.compare("restrict")){
-          print_ExpandTrace();
-          __abort();
+        d.TraceCount = 0;
+        for(uintptr_t eti = 0; ++eti < ExpandTrace.Usage();){
+          d.TraceCount++;
+          auto tdlid = d.DataLinkID;
+          d.DataLinkID = DataLink.NewNode();
+          DataLink[d.DataLinkID].dlid = tdlid;
+          DataLink[d.DataLinkID].DataID = ExpandTrace[eti].DataID;
+          DataLink[d.DataLinkID].Offset = ExpandTrace[eti].i;
         }
-        else if(!iden.compare("register")){
-          print_ExpandTrace();
-          __abort();
+
+        d.isfunc = false;
+        if(gc() == '('){
+          d.isfunc = true;
+          ic_unsafe();
+          GetDefineParams(d.Inputs, d.va_args);
         }
-        else if(!iden.compare("bool")){
-          print_ExpandTrace();
-          __abort();
-        }
-        #if set_support_c99
-          else if(!iden.compare("char")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("short")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("int")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("long")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("float")){
-            print_ExpandTrace();
-            __abort();
-          }
-          else if(!iden.compare("double")){
-            print_ExpandTrace();
-            __abort();
-          }
-        #endif
-        else if(!iden.compare("nullptr")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("break")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("case")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("const")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("continue")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("default")){
-          print_ExpandTrace();
-          __abort();
-        }
-        #if set_support_c99
-          else if(!iden.compare("do")){
-            print_ExpandTrace();
-            __abort();
-          }
-        #endif
-        else if(!iden.compare("if")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("else")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("enum")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("extern")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("false")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("true")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("for")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("goto")){
-          print_ExpandTrace();
-          __abort();
-        }
-        #if set_support_c99
-          else if(!iden.compare("inline")){
-            /* useless keyword */
-          }
-        #endif
-        else if(!iden.compare("return")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("sizeof")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("static")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("struct")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("switch")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("typedef")){
-          SkipTillCode();
-          uintptr_t lt;
-          iden = SimplifyType(lt);
-          if(iden.size() == 0){
-            SkipTillCode();
-            iden = GetIdentifier();
-          }
-          if(EXPECT(IdentifierMap.find(iden) != IdentifierMap.end(), false)){
-            errprint_exit("typedef to something already exists");
-          }
-          IdentifierMap[iden] = lt;
-          SkipTillCode();
-          if(gc() != ';'){
-            errprint_exit("expected ; after typedef");
-          }
+        else if(ischar_empty()){
           ic_unsafe();
         }
-        else if(!iden.compare("typeof")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("union")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("volatile")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("while")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else{
-          printwi("unknown identifier %.*s", iden.size(), iden.data());
+        else if(gc() != '\n'){
           __abort();
         }
 
-        break;
+        SkipEmptyInLine();
+        d.op = &gc();
+        while(gc() != '\n'){
+          ic_unsafe();
+        }
+        d.os = &gc();
+        ic();
+
+        DefineDataMap[defiden] = ddid;
       }
+      else if(!Identifier.compare("ifdef")){
+        PreprocessorIf(0, 0);
+      }
+      else if(!Identifier.compare("ifndef")){
+        PreprocessorIf(0, 1);
+      }
+      else if(!Identifier.compare("if")){
+        PreprocessorIf(0, 2);
+      }
+      else if(!Identifier.compare("elif")){
+        PreprocessorIf(1, 2);
+      }
+      else if(!Identifier.compare("else")){
+        PreprocessorIf(2, 3);
+      }
+      else if(!Identifier.compare("endif")){
+        PreprocessorIf(3, 0);
+      }
+      else if(!Identifier.compare("undef")){
+        SkipEmptyInLine();
+        auto defiden = GetIdentifier();
+        SkipCurrentEmptyLine();
+        if(DefineDataMap.find(defiden) == DefineDataMap.end()){
+          if(settings.Wmacro_not_defined){
+            printwi("warning, Wmacro-not-defined %.*s",
+              (uintptr_t)defiden.size(), defiden.data()
+            );
+          }
+        }
+        else{
+          DefineDataMap.erase(defiden);
+        }
+      }
+      else{
+        errprint_exit("unknown preprocessor identifier. %.*s",
+          (uintptr_t)Identifier.size(), Identifier.data()
+        );
+      }
+    }
+    else if(STR_ischar_char(gc()) || gc() == '_'){
+      auto iden = GetIdentifier();
+
+      if(!iden.compare("void")){
+        print_ExpandTrace();
+        __abort();
+      }
+      #if set_support_c99
+        else if(!iden.compare("unsigned")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("signed")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("auto")){
+          /* useless keyword */
+        }
+      #endif
+      else if(!iden.compare("restrict")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("register")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("bool")){
+        print_ExpandTrace();
+        __abort();
+      }
+      #if set_support_c99
+        else if(!iden.compare("char")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("short")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("int")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("long")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("float")){
+          print_ExpandTrace();
+          __abort();
+        }
+        else if(!iden.compare("double")){
+          print_ExpandTrace();
+          __abort();
+        }
+      #endif
+      else if(!iden.compare("nullptr")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("break")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("case")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("const")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("continue")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("default")){
+        print_ExpandTrace();
+        __abort();
+      }
+      #if set_support_c99
+        else if(!iden.compare("do")){
+          print_ExpandTrace();
+          __abort();
+        }
+      #endif
+      else if(!iden.compare("if")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("else")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("enum")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("extern")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("false")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("true")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("for")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("goto")){
+        print_ExpandTrace();
+        __abort();
+      }
+      #if set_support_c99
+        else if(!iden.compare("inline")){
+          /* useless keyword */
+        }
+      #endif
+      else if(!iden.compare("return")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("sizeof")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("static")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("struct")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("switch")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("typedef")){
+        SkipTillCode();
+        uintptr_t lt;
+        iden = SimplifyType(lt);
+        if(iden.size() == 0){
+          SkipTillCode();
+          iden = GetIdentifier();
+        }
+        if(EXPECT(IdentifierMap.find(iden) != IdentifierMap.end(), false)){
+          errprint_exit("typedef to something already exists");
+        }
+        IdentifierMap[iden] = lt;
+        SkipTillCode();
+        if(gc() != ';'){
+          errprint_exit("expected ; after typedef");
+        }
+        ic_unsafe();
+      }
+      else if(!iden.compare("typeof")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("union")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("volatile")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else if(!iden.compare("while")){
+        print_ExpandTrace();
+        __abort();
+      }
+      else{
+        printwi("unknown identifier %.*s", iden.size(), iden.data());
+        __abort();
+      }
+    }
+    else [[unlikely]] {
+      errprint_exit("cant identify %lx %c", gc(), gc());
+      __unreachable();
     }
   }
 
