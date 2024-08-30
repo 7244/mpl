@@ -117,9 +117,10 @@ void SkipCurrentLine(){
 
 #include "PreprocessorFunctions.h"
 
-/* returns identifier that it didnt understand */
-std::string_view SimplifyType(uintptr_t &TypeID){
+uintptr_t SimplifyType(){
   #if set_support_c99
+    uintptr_t TypeID;
+
     uintptr_t _void = 0;
     uintptr_t _unsigned = 0;
     uintptr_t _signed = 0;
@@ -282,7 +283,8 @@ std::string_view SimplifyType(uintptr_t &TypeID){
         else{
           CheckCTypeLogic();
           if(TypeID != (uintptr_t)-1){
-            return iden;
+            CurrentExpand.i -= iden.size();
+            return TypeID;
           }
           /* lets resolve iden */
           if(!iden.compare("struct")){
@@ -296,21 +298,34 @@ std::string_view SimplifyType(uintptr_t &TypeID){
                 TypeName = GetIdentifier();
               }
               else{
-                TypeID = IdentifierMapGet(TypeName);
+                __abort();
+                //TypeID = IdentifierMapGet(TypeName);
                 break;
               }
             }
           }
           else{
-            TypeID = IdentifierMapGet(iden);
+            auto Identifier = IdentifierMapGet(iden);
+            if(Identifier == NULL){
+              CurrentExpand.i -= iden.size();
+              return (TypeList_t::nr_t)-1;
+            }
+            if(Identifier->Type != Identifier_t::Type_t::Type){
+              CurrentExpand.i -= iden.size();
+              return (TypeList_t::nr_t)-1;
+            }
+            return Identifier->TypeID;
           }
-          return std::string_view();
+          __abort(); // check if in upside
+          return TypeID;
         }
       }
       else if(gc() == '*'){
         __abort();
       }
       else{
+        printstderr("what is this character? \"%c\" %lx\n", gc(), gc());
+        errprint_exit("");
         break;
       }
 
@@ -324,6 +339,22 @@ std::string_view SimplifyType(uintptr_t &TypeID){
   #endif
 }
 
+void AddTypeToUnit(TypeList_t::nr_t TypeID){
+  ScopeUnitInc(ScopeData_t::UnitEnum::Type);
+  auto u = (ScopeData_t::UnitData_Type_t *)ScopeUnitData();
+  u->tid = TypeID;
+  TypeReference(u->tid); /* will dereferenced at unit free */
+}
+
+bool TryProcessIdentifierAsType(){
+  auto TypeID = SimplifyType();
+  if(TypeID != (TypeList_t::nr_t)-1){
+    AddTypeToUnit(TypeID);
+    return true;
+  }
+  return false;
+}
+
 bool Compile(){
   while(1){
     SkipTillCode();
@@ -331,63 +362,34 @@ bool Compile(){
       #include "PreprocessorStart.h"
     }
     else if(STR_ischar_char(gc()) || gc() == '_'){
-      auto iden = GetIdentifier();
 
+      if(TryProcessIdentifierAsType()){
+        continue;
+      }
+
+      auto iden = GetIdentifier();
       if(!iden.compare("void")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
       #if set_support_c99
-        else if(!iden.compare("unsigned")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("signed")){
-          print_ExpandTrace();
-          __abort();
-        }
         else if(!iden.compare("auto")){
-          /* useless keyword */
+          /* TOOD this is type right? put it to type places. */
+          /* useless keyword in c99 */
+          __abort();
         }
       #endif
       else if(!iden.compare("restrict")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
       else if(!iden.compare("register")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
-      else if(!iden.compare("bool")){
-        print_ExpandTrace();
-        __abort();
-      }
-      #if set_support_c99
-        else if(!iden.compare("char")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("short")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("int")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("long")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("float")){
-          print_ExpandTrace();
-          __abort();
-        }
-        else if(!iden.compare("double")){
-          print_ExpandTrace();
-          __abort();
-        }
-      #endif
       else if(!iden.compare("nullptr")){
         print_ExpandTrace();
         __abort();
@@ -401,6 +403,7 @@ bool Compile(){
         __abort();
       }
       else if(!iden.compare("const")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
@@ -427,10 +430,12 @@ bool Compile(){
         __abort();
       }
       else if(!iden.compare("enum")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
       else if(!iden.compare("extern")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
@@ -452,7 +457,9 @@ bool Compile(){
       }
       #if set_support_c99
         else if(!iden.compare("inline")){
+          /* TOOD this is type right? put it to type places. */
           /* useless keyword */
+          __abort();
         }
       #endif
       else if(!iden.compare("return")){
@@ -464,10 +471,12 @@ bool Compile(){
         __abort();
       }
       else if(!iden.compare("static")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
       else if(!iden.compare("struct")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
@@ -476,32 +485,19 @@ bool Compile(){
         __abort();
       }
       else if(!iden.compare("typedef")){
-        SkipTillCode();
-        uintptr_t lt;
-        iden = SimplifyType(lt);
-        if(iden.size() == 0){
-          SkipTillCode();
-          iden = GetIdentifier();
-        }
-        if(EXPECT(IdentifierMap.find(iden) != IdentifierMap.end(), false)){
-          errprint_exit("typedef to something already exists");
-        }
-        IdentifierMap[iden] = lt;
-        SkipTillCode();
-        if(gc() != ';'){
-          errprint_exit("expected ; after typedef");
-        }
-        ic_unsafe();
+        ScopeUnitInc(ScopeData_t::UnitEnum::Typedef);
       }
       else if(!iden.compare("typeof")){
         print_ExpandTrace();
         __abort();
       }
       else if(!iden.compare("union")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
       else if(!iden.compare("volatile")){
+        /* TOOD this is type right? put it to type places. */
         print_ExpandTrace();
         __abort();
       }
@@ -510,9 +506,15 @@ bool Compile(){
         __abort();
       }
       else{
-        printwi("unknown identifier %.*s", iden.size(), iden.data());
-        __abort();
+        SkipTillCode();
+        ScopeUnitInc(ScopeData_t::UnitEnum::UnknownIdentifier);
+        auto u = (ScopeData_t::UnitData_UnknownIdentifier_t *)ScopeUnitData();
+        u->str = iden;
       }
+    }
+    else if(gc() == ';'){
+      ic_unsafe();
+      ScopeUnitDone();
     }
     else [[unlikely]] {
       errprint_exit("cant identify %lx %c", gc(), gc());

@@ -284,6 +284,172 @@ struct pile_t{
     PR_exit(1); \
     __unreachable();
 
+  struct TypeData_t{
+    uintptr_t refc = 0;
+  };
+  #define BLL_set_prefix TypeList
+  #define BLL_set_Link 0
+  #define BLL_set_Recycle 0
+  #define BLL_set_IntegerNR 1
+  #define BLL_set_CPP_ConstructDestruct 1
+  #define BLL_set_CPP_Node_ConstructDestruct 1
+  #define BLL_set_AreWeInsideStruct 1
+  #define BLL_set_NodeDataType TypeData_t
+  #define BLL_set_type_node uintptr_t
+  #include <BLL/BLL.h>
+  TypeList_t TypeList;
+
+  struct Identifier_t{
+    enum class Type_t : uintptr_t{
+      Type,
+      Function,
+      Label,
+      Variable
+    };
+    Type_t Type;
+    union{
+      TypeList_t::nr_t TypeID;
+    };
+  };
+  std::map<std::string, Identifier_t> IdentifierMap;
+  std::map<std::string, TypeList_t::nr_t> StructIdentifierMap;
+
+  Identifier_t *IdentifierMapGet(auto p){
+    auto it = IdentifierMap.find(std::string(p));
+    if(it == IdentifierMap.end()){
+      return NULL;
+    }
+    return &it->second;
+  }
+
+  void TypeReference(TypeList_t::nr_t id){
+    TypeList[id].refc++;
+  }
+  void TypeDereference(TypeList_t::nr_t id){
+    TypeList[id].refc--;
+    if(TypeList[id].refc == 0){
+      __abort();
+    }
+  }
+
+  enum class ScopeEnum : uintptr_t{
+    Global,
+    Type
+  };
+  struct ScopeData_t{
+    ScopeEnum se;
+
+    enum class UnitEnum : uintptr_t{
+      Typedef,
+      Type,
+      UnknownIdentifier
+    };
+    struct UnitData_Type_t{
+      TypeList_t::nr_t tid; /* type id */
+    };
+    struct UnitData_UnknownIdentifier_t{
+      std::string str;
+    };
+    struct UnitData_t{
+      UnitEnum ue;
+      union{ /* ugly because c++ doesnt support unions properly */
+        uint8_t u;
+        uint8_t n0[sizeof(UnitData_Type_t)];
+        uint8_t n1[sizeof(UnitData_UnknownIdentifier_t)];
+      };
+    };
+    UnitData_t UnitArray[8];
+    uintptr_t UnitIndex = 0;
+
+    void constructor(ScopeEnum se){
+      new (this) ScopeData_t;
+      this->se = se;
+    }
+    void destructor(){
+      this->~ScopeData_t();
+    }
+  };
+  struct ScopeStack_t{
+    ScopeData_t *i;
+
+    ScopeStack_t(){
+      /* TOOD use mmap and reserve after pointer */
+      /* so we can get crash for sure instead of corruption */
+
+      i = (ScopeData_t *)A_resize(NULL, 0x100 * sizeof(ScopeData_t));
+
+      i->constructor(ScopeEnum::Global);
+    }
+    ~ScopeStack_t(){
+      A_resize(i, 0);
+    }
+  }ScopeStack;
+  void ScopeIn(ScopeEnum se){
+    ScopeStack.i++;
+    ScopeStack.i->constructor(se);
+  }
+  void ScopeOut(){
+    ScopeStack.i->destructor();
+    ScopeStack.i--;
+  }
+  void *ScopeUnitData(uintptr_t i){
+    return (void *)&ScopeStack.i->UnitArray[i].u;
+  }
+  void *ScopeUnitData(){
+    return ScopeUnitData(ScopeStack.i->UnitIndex - 1);
+  }
+  void ScopeUnitInc(ScopeData_t::UnitEnum ue){
+    auto &s = *ScopeStack.i;
+    if(s.UnitIndex == sizeof(s.UnitArray) / sizeof(s.UnitArray[0])){
+      __abort();
+    }
+
+    if(ue == ScopeData_t::UnitEnum::UnknownIdentifier){
+      new (&s.UnitArray[s.UnitIndex].u) ScopeData_t::UnitData_UnknownIdentifier_t;
+    }
+
+    s.UnitArray[s.UnitIndex].ue = ue;
+
+    s.UnitIndex++;
+  }
+  void ScopeClearUnits(){
+    auto &s = *ScopeStack.i;
+    auto ui = s.UnitIndex;
+    while(ui--){
+      if(s.UnitArray[ui].ue == ScopeData_t::UnitEnum::Type){
+        TypeDereference(((ScopeData_t::UnitData_Type_t *)&s.UnitArray[ui].u)->tid);
+      }
+      if(s.UnitArray[ui].ue == ScopeData_t::UnitEnum::UnknownIdentifier){
+        ((ScopeData_t::UnitData_UnknownIdentifier_t *)&s.UnitArray[ui].u)->~UnitData_UnknownIdentifier_t();
+      }
+    }
+  }
+  void ScopeResetUnits(){
+    auto &s = *ScopeStack.i;
+    ScopeClearUnits();
+    s.UnitIndex = 0;
+  }
+  void ScopeUnitDone(){
+    auto &s = *ScopeStack.i;
+    do{
+      #include "ScopeUnitDone.h"
+    }while(0);
+    ScopeResetUnits();
+  }
+
+  void IdentifierPointType(auto in, TypeList_t::nr_t TypeID){
+    if(ScopeStack.i->se == ScopeEnum::Global){
+      TypeReference(TypeID);
+      IdentifierMap[in] = {
+        .Type = Identifier_t::Type_t::Type,
+        .TypeID = TypeID
+      };
+    }
+    else{
+      __abort();
+    }
+  }
+
   enum class SpecialTypeEnum : uintptr_t{
     _void,
     _uint64_t,
@@ -305,38 +471,13 @@ struct pile_t{
       #error ?
     #endif
   };
-  struct TypeData_t{
-    uintptr_t refc = 0;
-  };
-  #define BLL_set_prefix TypeList
-  #define BLL_set_Link 0
-  #define BLL_set_Recycle 0
-  #define BLL_set_IntegerNR 1
-  #define BLL_set_CPP_ConstructDestruct 1
-  #define BLL_set_CPP_Node_ConstructDestruct 1
-  #define BLL_set_AreWeInsideStruct 1
-  #define BLL_set_NodeDataType TypeData_t
-  #define BLL_set_type_node uintptr_t
-  #include <BLL/BLL.h>
-  TypeList_t TypeList;
-
-  std::map<std::string_view, uintptr_t> IdentifierMap;
-  auto &IdentifierMapGet(auto p){
-    auto it = IdentifierMap.find(p);
-    if(EXPECT(it == IdentifierMap.end(), false)){
-      errprint_exit("failed to find type %.*s", (uintptr_t)p.size(), p.data());
-    }
-    return it->second;
-  }
-
   struct TypeInit_t{
     TypeInit_t(){
       auto pile = OFFSETLESS(this, pile_t, TypeInit);
 
       #define d(name) \
         pile->TypeList.inc(); \
-        pile->TypeList[pile->TypeList.Usage() - 1].refc++; \
-        pile->IdentifierMap[STR(name)] = (uintptr_t)SpecialTypeEnum::CONCAT(_,name);
+        pile->IdentifierPointType(STR(name), (TypeList_t::nr_t)(pile->TypeList.Usage() - 1));
 
       d(void)
       d(uint64_t)
@@ -349,8 +490,8 @@ struct pile_t{
       d(sint8_t)
       d(bool)
 
-      d(uintptr_t)
-      d(sintptr_t)
+      pile->IdentifierPointType("_uintptr_t", (TypeList_t::nr_t)SpecialTypeEnum::_uintptr_t);
+      pile->IdentifierPointType("_sintptr_t", (TypeList_t::nr_t)SpecialTypeEnum::_sintptr_t);
 
       #undef d
     }
@@ -503,13 +644,17 @@ struct pile_t{
       if(sdatabegin == sdataend || *(sdataend - 1) != '\n'){
         *sdataend++ = '\n';
       }
-      sdatabegin = A_resize(sdatabegin, sdataend - sdatabegin);
+
+      uintptr_t sdataSize = sdataend - sdatabegin;
+
+      /* sdatabegin can be changed with resize so lets dont use sdataend */
+      sdatabegin = A_resize(sdatabegin, sdataSize);
 
       FileDataList[FileDataList.NewNode()] = {
         .rdatabegin = rdatabegin,
         .rdataend = rdataend,
         .sdatabegin = sdatabegin,
-        .sdataend = sdataend,
+        .sdataend = &sdatabegin[sdataSize],
         .FullPath = abspath,
         .FileNameSize = FileNameSize
       };
