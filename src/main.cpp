@@ -33,6 +33,10 @@
 #include <vector>
 #include <map>
 
+#ifndef SWAP
+  #define SWAP(p0, p1) std::swap(p0, p1)
+#endif
+
 void _print(sint32_t fd, const char *format, ...){
   IO_fd_t fd_stdout;
   IO_fd_set(&fd_stdout, fd);
@@ -289,7 +293,7 @@ struct pile_t{
   };
   #define BLL_set_prefix TypeList
   #define BLL_set_Link 0
-  #define BLL_set_Recycle 0
+  #define BLL_set_Recycle 1
   #define BLL_set_IntegerNR 1
   #define BLL_set_CPP_ConstructDestruct 1
   #define BLL_set_CPP_Node_ConstructDestruct 1
@@ -338,6 +342,9 @@ struct pile_t{
   };
   struct ScopeData_t{
     ScopeEnum se;
+    union{
+      TypeList_t::nr_t TypeID;
+    };
 
     enum class UnitEnum : uintptr_t{
       Typedef,
@@ -450,6 +457,24 @@ struct pile_t{
     }
   }
 
+  void IWantToDefineType(TypeList_t::nr_t TypeID){
+    __abort();
+  }
+
+  TypeList_t::nr_t DeclareType(){
+    return TypeList.NewNode();
+  }
+
+  TypeList_t::nr_t StructIdentifierGetType(auto in){
+    auto find = StructIdentifierMap.find(std::string(in));
+    if(find != StructIdentifierMap.end()){
+      return find->second;
+    }
+    auto r = DeclareType();
+    StructIdentifierMap[std::string(in)] = r;
+    return r;
+  }
+
   enum class SpecialTypeEnum : uintptr_t{
     _void,
     _uint64_t,
@@ -476,8 +501,7 @@ struct pile_t{
       auto pile = OFFSETLESS(this, pile_t, TypeInit);
 
       #define d(name) \
-        pile->TypeList.inc(); \
-        pile->IdentifierPointType(STR(name), (TypeList_t::nr_t)(pile->TypeList.Usage() - 1));
+        pile->IdentifierPointType(STR(name), pile->TypeList.NewNode());
 
       d(void)
       d(uint64_t)

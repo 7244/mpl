@@ -117,6 +117,7 @@ void SkipCurrentLine(){
 
 #include "PreprocessorFunctions.h"
 
+/* note that this function can change scope */
 uintptr_t SimplifyType(){
   #if set_support_c99
     uintptr_t TypeID;
@@ -282,20 +283,31 @@ uintptr_t SimplifyType(){
         }
         else{
           CheckCTypeLogic();
-          if(TypeID != (uintptr_t)-1){
+          if(TypeID != (TypeList_t::nr_t)-1){
             CurrentExpand.i -= iden.size();
             return TypeID;
           }
           /* lets resolve iden */
           if(!iden.compare("struct")){
-            std::string TypeName;
             while(1){
               SkipTillCode();
               if(gc() == '{'){
-                __abort();
+                ic_unsafe();
+                if(TypeID == (TypeList_t::nr_t)-1){
+                  /* we gonna define struct without typename */
+                  TypeID = DeclareType();
+                }
+                else{ /* should work if this was not inside else too */
+                  IWantToDefineType(TypeID);
+                }
+
+                ScopeIn(ScopeEnum::Type);
+                ScopeStack.i->TypeID = TypeID;
+
+                return TypeID;
               }
-              else if(!TypeName.size()){
-                TypeName = GetIdentifier();
+              else if(TypeID == (TypeList_t::nr_t)-1){
+                TypeID = StructIdentifierGetType(GetIdentifier());
               }
               else{
                 __abort();
@@ -346,13 +358,16 @@ void AddTypeToUnit(TypeList_t::nr_t TypeID){
   TypeReference(u->tid); /* will dereferenced at unit free */
 }
 
-bool TryProcessIdentifierAsType(){
+bool TryProcessUnitIdentifierAsType(){
+  auto scope = ScopeStack.i;
   auto TypeID = SimplifyType();
-  if(TypeID != (TypeList_t::nr_t)-1){
-    AddTypeToUnit(TypeID);
-    return true;
+  if(TypeID == (TypeList_t::nr_t)-1){
+    return false;
   }
-  return false;
+  SWAP(scope, ScopeStack.i);
+  AddTypeToUnit(TypeID);
+  SWAP(scope, ScopeStack.i);
+  return true;
 }
 
 bool Compile(){
@@ -363,7 +378,7 @@ bool Compile(){
     }
     else if(STR_ischar_char(gc()) || gc() == '_'){
 
-      if(TryProcessIdentifierAsType()){
+      if(TryProcessUnitIdentifierAsType()){
         continue;
       }
 
@@ -511,6 +526,9 @@ bool Compile(){
         auto u = (ScopeData_t::UnitData_UnknownIdentifier_t *)ScopeUnitData();
         u->str = iden;
       }
+    }
+    else if(gc() == '['){
+      __abort();
     }
     else if(gc() == ';'){
       ic_unsafe();
