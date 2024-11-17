@@ -141,11 +141,8 @@ PreprocessorParseType IdentifyPreprocessorParse(){
     ic_unsafe();
     return PreprocessorParseType::opternary;
   }
-  else{
-    errprint_exit("cant identify preprocessor parse %lx %c", gc(), gc());
-  }
 
-  __unreachable();
+  errprint_exit("cant identify preprocessor parse %lx %c", gc(), gc());
 }
 
 /* include strings cant have escape or anything fancy */

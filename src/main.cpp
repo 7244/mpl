@@ -32,6 +32,8 @@
 #include <string_view>
 #include <vector>
 #include <map>
+/* for process main's parameters */
+#include <functional>
 
 #ifndef SWAP
   #define SWAP(p0, p1) std::swap(p0, p1)

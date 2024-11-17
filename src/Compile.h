@@ -345,7 +345,6 @@ uintptr_t SimplifyType(){
     }
 
     __abort();
-    __unreachable();
   #else
     #error ?
   #endif
@@ -536,7 +535,6 @@ bool Compile(){
     }
     else [[unlikely]] {
       errprint_exit("cant identify %lx %c", gc(), gc());
-      __unreachable();
     }
   }
 
