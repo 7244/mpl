@@ -64,6 +64,7 @@ struct pile_t{
 
   /* INFO rdata stands for raw data, sdata stands for simplified data */
   #define BLL_set_prefix FileDataList
+  #define BLL_set_Usage 1
   #define BLL_set_Link 0
   #define BLL_set_Recycle 0
   #define BLL_set_IntegerNR 1
@@ -152,6 +153,20 @@ struct pile_t{
   };
   std::vector<PreprocessorScope_t> PreprocessorScope;
 
+  struct FormulaStack_t{
+    uint8_t *i;
+
+    FormulaStack_t(){
+      /* TOOD use mmap and reserve after pointer */
+      /* so we can get crash for sure instead of corruption */
+
+      i = (uint8_t *)A_resize(NULL, 0x4000);
+    }
+    ~FormulaStack_t(){
+      A_resize(i, 0);
+    }
+  }FormulaStack;
+
   struct DefineStack_t{
     uint8_t *i;
 
@@ -189,6 +204,7 @@ struct pile_t{
   };
   expandtrace_data_t CurrentExpand;
   #define BLL_set_prefix ExpandTrace
+  #define BLL_set_Usage 1
   #define BLL_set_Link 0
   #define BLL_set_Recycle 0
   #define BLL_set_IntegerNR 1
@@ -340,7 +356,8 @@ struct pile_t{
 
   enum class ScopeEnum : uintptr_t{
     Global,
-    Type
+    Type,
+    SquareBrackets
   };
   struct ScopeData_t{
     ScopeEnum se;
@@ -579,7 +596,7 @@ struct pile_t{
 
       uintptr_t i = 0;
       for(; i < DefaultInclude.size(); i++){
-        if(IO_IsPathExists((DefaultInclude[i] + PathName).c_str())){
+        if(IO_IsPathExists_cstr((DefaultInclude[i] + PathName).c_str())){
           break;
         }
       }

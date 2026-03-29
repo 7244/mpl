@@ -483,7 +483,7 @@ void ExpandPreprocessorIdentifier(){
           __abort();
         }
         else{
-          __MemoryCopy(iden.data(), DefineStack.i, iden.size());
+          __builtin_memcpy(DefineStack.i, iden.data(), iden.size());
           DefineStack.i += iden.size();
         }
         ic_unsafe(); /* second # */
@@ -502,7 +502,7 @@ void ExpandPreprocessorIdentifier(){
         __abort();
       }
       else{
-        __MemoryCopy(iden.data(), DefineStack.i, iden.size());
+        __builtin_memcpy(DefineStack.i, iden.data(), iden.size());
         DefineStack.i += iden.size();
       }
 

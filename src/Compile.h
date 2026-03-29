@@ -527,7 +527,60 @@ bool Compile(){
       }
     }
     else if(gc() == '['){
-      __abort();
+      ic_unsafe(); // Consume '['
+      uintptr_t result = 0;
+      bool expecting_operand = true;
+      char last_operator = '+';
+      
+      // Parse formula between brackets
+      while(gc() != ']') {
+        if(gc() == '\n') {
+          errprint_exit("Unclosed square bracket formula");
+        }
+        
+        if(expecting_operand) {
+          if(STR_ischar_digit(gc())) {
+            // Parse number
+            uintptr_t num = 0;
+            while(STR_ischar_digit(gc())) {
+              num = num * 10 + (gc() - '0');
+              ic_unsafe();
+            }
+            
+            // Apply operator
+            switch(last_operator) {
+              case '+': result += num; break;
+              case '-': result -= num; break;
+              case '*': result *= num; break;
+              case '/': 
+                if(num == 0) errprint_exit("Division by zero");
+                result /= num; 
+                break;
+            }
+            expecting_operand = false;
+          } else {
+            errprint_exit("Expected number in formula");
+          }
+        } else {
+          // Handle operators
+          switch(gc()) {
+            case '+':
+            case '-':
+            case '*':
+            case '/':
+              last_operator = gc();
+              ic_unsafe();
+              expecting_operand = true;
+              break;
+            default:
+              errprint_exit("Invalid operator in formula");
+          }
+        }
+      }
+      ic_unsafe(); // Consume ']'
+      
+      ScopeIn(ScopeEnum::SquareBrackets);
+      ScopeStack.i->TypeID = result;
     }
     else if(gc() == ';'){
       ic_unsafe();
