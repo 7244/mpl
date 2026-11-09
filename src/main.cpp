@@ -520,7 +520,7 @@ struct pile_t{
       auto pile = OFFSETLESS(this, pile_t, TypeInit);
 
       #define d(name) \
-        pile->IdentifierPointType(STR(name), pile->TypeList.NewNode());
+        pile->IdentifierPointType(STRINGIFY(name), pile->TypeList.NewNode());
 
       d(void)
       d(uint64_t)
